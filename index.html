@@ -1,781 +1,413 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>📦 存证终端(调试版)</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-  <style>
-    body { background-color: #000; color: white; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
-    .hidden { display: none !important; }
-
-    #scanner-container {
-      width: 100%; height: 50vh; background: #000; border-radius: 12px; overflow: hidden; border: 2px solid #333;
-      position: relative;
-    }
-    #scanner-container video { object-fit: cover !important; width: 100% !important; height: 100% !important; }
-    .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
-    .recording-border { box-shadow: inset 0 0 0 6px red; animation: pulse-red 2s infinite; }
-    @keyframes pulse-red { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
-
-    .scan-line {
-      position: absolute; width: 100%; height: 3px; background: #ef4444; top: 0;
-      animation: scan 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-      box-shadow: 0 0 15px #ef4444, 0 0 30px #ef4444; opacity: 0.9; z-index: 20;
-    }
-    @keyframes scan { 0% { top: 10%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 90%; opacity: 0; } }
-
-    input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
-    input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none; height: 24px; width: 24px; border-radius: 50%; background: #3b82f6; cursor: pointer;
-      margin-top: -10px; box-shadow: 0 0 10px rgba(59,130,246,0.5); border: 2px solid white;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>📦 存证实验室</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+        body { background-color: #000; color: white; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+        .hidden { display: none !important; }
+        
+        #scanner-container { 
+            width: 100%; height: 50vh; background: #000; border-radius: 12px; overflow: hidden; border: 2px solid #333; 
+            position: relative;
+        }
+        #scanner-container video { object-fit: cover !important; width: 100% !important; height: 100% !important; }
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+        .recording-border { box-shadow: inset 0 0 0 6px red; animation: pulse-red 2s infinite; }
+        @keyframes pulse-red { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+        /* 扫描区域指示框 */
+        .scan-region {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 80%; height: 150px;
+            border: 2px dashed rgba(0, 255, 0, 0.5);
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5); /* 遮罩效果 */
+            pointer-events: none; z-index: 10;
+        }
+        .scan-line {
+            position: absolute; width: 100%; height: 2px; background: #ef4444; top: 0;
+            animation: scan 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite; z-index: 20;
+        }
+        @keyframes scan { 0% { top: 0; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
+        
+        /* 实验室面板 */
+        .lab-panel {
+            background: #111; border: 1px solid #333; padding: 10px; border-radius: 8px; margin-bottom: 10px;
+        }
+        .lab-btn {
+            background: #222; border: 1px solid #444; color: #ccc; padding: 5px 10px; border-radius: 4px; font-size: 12px;
+        }
+        .lab-btn.active { background: #2563eb; color: white; border-color: #3b82f6; }
+    </style>
 </head>
-
 <body class="p-4 flex flex-col h-screen pb-safe">
 
-  <!-- 顶部 -->
-  <div class="flex justify-between items-center mb-2">
-    <div>
-      <h1 class="text-lg font-bold text-white flex items-center gap-2">
-        🚀 存证终端
-        <span class="text-[10px] bg-yellow-600 px-1 rounded font-mono" id="sys-badge">DEBUG</span>
-      </h1>
-      <div class="text-[10px] text-gray-400 mt-1 font-mono">
-        iOS原生识别: <span id="bd-badge" class="text-gray-500">--</span>
-        · 测试模式: <span id="test-badge" class="text-gray-500">OFF</span>
-      </div>
+    <!-- 顶部 -->
+    <div class="flex justify-between items-center mb-2">
+        <h1 class="text-lg font-bold text-white flex items-center gap-2">
+            🧬 存证实验室
+            <span class="text-[10px] bg-purple-600 px-1 rounded font-mono" id="sys-badge">TEST MODE</span>
+        </h1>
+        <div class="flex gap-2">
+             <button onclick="toggleLog()" class="text-xs bg-gray-800 px-2 py-1 rounded border border-gray-600">📝 日志</button>
+             <button onclick="toggleTorch()" id="torch-btn" class="bg-gray-800 p-2 rounded-full border border-gray-600 active:bg-yellow-600 disabled:opacity-50 transition-colors">🔦</button>
+        </div>
     </div>
 
-    <div class="flex gap-2">
-      <button onclick="toggleDebug()" class="bg-gray-800 text-xs px-2 py-1 rounded border border-gray-600 text-yellow-400">🐞 调试日志</button>
-
-      <!-- 新增：iOS 扫描测试 -->
-      <button onclick="runIosScanTest()" id="ios-test-btn"
-              class="bg-gray-800 text-xs px-2 py-1 rounded border border-gray-600 text-pink-300">
-        🍎 iOS测试
-      </button>
-
-      <button onclick="toggleTorch()" id="torch-btn" class="bg-gray-800 p-2 rounded-full border border-gray-600 active:bg-yellow-600 disabled:opacity-50 transition-colors">🔦</button>
-    </div>
-  </div>
-
-  <!-- 调试窗口 -->
-  <div id="debug-console" class="hidden fixed top-0 left-0 w-full h-full bg-black/95 z-[100] p-4 font-mono text-xs overflow-y-auto text-green-400">
-    <div class="flex justify-between items-center border-b border-gray-700 pb-2 mb-2 sticky top-0 bg-black">
-      <span class="font-bold text-white">系统日志</span>
-      <div class="flex gap-2">
-        <button onclick="clearLogs()" class="text-blue-400 border border-blue-900 px-2 rounded">清空</button>
-        <button onclick="toggleDebug()" class="text-red-500 border border-red-900 px-2 rounded">关闭 X</button>
-      </div>
-    </div>
-    <div id="debug-content" class="space-y-1 pb-20"></div>
-  </div>
-
-  <!-- 扫描区 -->
-  <div id="scanner-wrapper" class="relative shadow-2xl rounded-xl overflow-hidden bg-gray-900">
-    <div id="scanner-container"></div>
-
-    <div class="absolute top-4 left-4 bg-black/60 backdrop-blur px-3 py-1 rounded border border-white/20 z-10">
-      <p class="text-[10px] text-gray-400 uppercase">当前录制</p>
-      <p class="text-xl font-mono text-green-400 font-bold tracking-wider" id="current-barcode">READY</p>
-      <p class="text-[10px] text-gray-500 font-mono mt-1" id="scan-health">scan: --</p>
+    <!-- 实验室控制面板 (iOS 救星) -->
+    <div class="lab-panel">
+        <div class="flex justify-between items-center mb-2">
+            <span class="text-xs font-bold text-yellow-400">🛠️ iOS 调试配置</span>
+            <select id="camera-select" class="bg-gray-800 text-xs border border-gray-600 rounded px-1 py-1 w-32" onchange="restartWithConfig()">
+                <option value="">自动选择摄像头</option>
+            </select>
+        </div>
+        <div class="grid grid-cols-3 gap-2 mb-2">
+            <button onclick="setRes('720')" id="btn-720" class="lab-btn active">720P (稳)</button>
+            <button onclick="setRes('1080')" id="btn-1080" class="lab-btn">1080P (清)</button>
+            <button onclick="setRes('4k')" id="btn-4k" class="lab-btn">4K (极)</button>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+            <button onclick="setFormat('1d')" id="btn-1d" class="lab-btn active">仅条形码 (快)</button>
+            <button onclick="setFormat('all')" id="btn-all" class="lab-btn">全格式 (全)</button>
+        </div>
+        <div class="mt-2 text-[10px] text-gray-500 text-center" id="config-desc">当前: 720P / 仅条形码 (推荐iOS)</div>
     </div>
 
-    <div class="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded text-xs font-bold hidden z-10 animate-pulse" id="rec-badge">● REC</div>
-    <div id="scan-line-el" class="scan-line hidden"></div>
-
-    <div id="toast" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full text-center pointer-events-none opacity-0 transition-opacity duration-200 z-50 px-4">
-      <span class="bg-black/90 text-white px-6 py-4 rounded-xl text-xl font-bold shadow-2xl border border-gray-500 backdrop-blur-md block" id="toast-text"></span>
+    <!-- 调试日志窗口 -->
+    <div id="debug-log" class="hidden fixed inset-0 bg-black/95 z-[100] p-4 font-mono text-xs overflow-y-auto text-green-400">
+        <div class="flex justify-between items-center border-b border-gray-700 pb-2 mb-2 sticky top-0 bg-black">
+            <span class="font-bold text-white">运行日志</span>
+            <button onclick="toggleLog()" class="text-red-500 border border-red-900 px-2 rounded">关闭</button>
+        </div>
+        <div id="log-content"></div>
     </div>
-  </div>
 
-  <!-- 变焦 -->
-  <div class="mt-4 mb-2 bg-gray-900 p-3 rounded-lg border border-gray-800 flex items-center gap-3">
-    <span class="text-xs text-gray-400">1x</span>
-    <input type="range" id="zoom-slider" min="1" max="5" step="0.1" value="1" disabled oninput="applyZoom(this.value)" />
-    <span class="text-xs text-gray-400">5x</span>
-  </div>
-
-  <!-- 底部按钮 -->
-  <div class="flex-1 flex flex-col justify-end gap-3">
-    <button onclick="startPipeline()" id="main-btn"
-            class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold text-xl shadow-lg transition-all border border-blue-400/30 active:scale-95">
-      📸 启动扫描
-    </button>
-    <div class="flex justify-between items-center px-1">
-      <div class="flex gap-4">
-        <a href="#" onclick="showHistory()" class="text-sm text-gray-400 hover:text-white">📂 历史</a>
-        <a href="#" onclick="manualTriggerDialog()" class="text-sm text-gray-400 hover:text-white">⌨️ 输单</a>
-      </div>
-      <span id="storage-info" class="text-[10px] text-gray-600 font-mono">存储: --</span>
+    <!-- 扫描区 -->
+    <div id="scanner-wrapper" class="relative shadow-2xl rounded-xl overflow-hidden bg-gray-900">
+        <div id="scanner-container">
+            <!-- 视觉辅助框 -->
+            <div class="scan-region">
+                <div class="scan-line hidden" id="scan-line-el"></div>
+            </div>
+        </div>
+        
+        <div class="absolute top-4 left-4 bg-black/60 backdrop-blur px-3 py-1 rounded border border-white/20 z-10">
+            <p class="text-[10px] text-gray-400 uppercase">当前单号</p>
+            <p class="text-xl font-mono text-green-400 font-bold tracking-wider" id="current-barcode">READY</p>
+        </div>
+        <div class="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded text-xs font-bold hidden z-10 animate-pulse" id="rec-badge">● REC</div>
+        <div id="toast" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full text-center pointer-events-none opacity-0 transition-opacity duration-200 z-50 px-4">
+            <span class="bg-black/90 text-white px-6 py-4 rounded-xl text-xl font-bold shadow-2xl border border-gray-500 backdrop-blur-md block" id="toast-text"></span>
+        </div>
     </div>
-  </div>
 
-  <!-- 历史 -->
-  <div id="history-modal" class="fixed inset-0 bg-black/95 z-50 hidden flex flex-col p-4 animate-fade-in">
-    <div class="flex justify-between items-center mb-4 border-b border-gray-800 pb-2">
-      <h2 class="text-xl font-bold text-white">📜 历史记录</h2>
-      <button onclick="closeHistory()" class="text-3xl text-gray-400 hover:text-white">&times;</button>
+    <!-- 变焦 -->
+    <div class="mt-4 mb-2 bg-gray-900 p-3 rounded-lg border border-gray-800 flex items-center gap-3">
+        <span class="text-xs text-gray-400">1x</span>
+        <input type="range" id="zoom-slider" min="1" max="5" step="0.1" value="1" disabled oninput="applyZoom(this.value)">
+        <span class="text-xs text-gray-400">5x</span>
     </div>
-    <input id="search-input" class="bg-gray-800 p-3 rounded-lg text-white border border-gray-700 w-full mb-4 outline-none"
-           placeholder="🔍 搜索..." oninput="doSearch()" />
-    <div id="video-list" class="flex-1 overflow-y-auto space-y-2 pb-4"></div>
-    <div class="mt-2 pt-2 border-t border-gray-800 flex gap-2">
-      <button onclick="clearOldData()" class="flex-1 bg-yellow-900/30 text-yellow-500 text-xs py-3 rounded-lg">🧹 清理30天前</button>
-      <button onclick="clearAllData()" class="flex-1 bg-red-900/30 text-red-500 text-xs py-3 rounded-lg">🗑️ 强制清空</button>
+
+    <!-- 底部按钮 -->
+    <div class="flex-1 flex flex-col justify-end gap-3">
+        <button onclick="startPipeline()" id="main-btn" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold text-xl shadow-lg transition-all border border-blue-400/30 active:scale-95">
+            📸 启动扫描
+        </button>
+        <div class="flex justify-between items-center px-1">
+            <div class="flex gap-4">
+                <a href="#" onclick="showHistory()" class="text-sm text-gray-400 hover:text-white">📂 历史</a>
+                <a href="#" onclick="manualTriggerDialog()" class="text-sm text-gray-400 hover:text-white">⌨️ 输单</a>
+            </div>
+            <span id="storage-info" class="text-[10px] text-gray-600 font-mono">存储: --</span>
+        </div>
     </div>
-  </div>
 
-  <!-- 播放器 -->
-  <div id="player-modal" class="fixed inset-0 bg-black z-[60] hidden flex flex-col justify-center bg-opacity-95">
-    <button onclick="closePlayer()" class="absolute top-6 right-6 text-white text-3xl z-20 bg-gray-800 rounded-full w-12 h-12 flex items-center justify-center">&times;</button>
-    <video id="main-player" controls playsinline class="w-full max-h-[80vh] bg-black"></video>
-    <div class="text-center mt-6">
-      <h3 id="player-title" class="text-xl font-mono text-white mb-4"></h3>
-      <a id="download-btn" href="#" download class="bg-blue-600 text-white px-8 py-3 rounded-full font-bold">💾 保存</a>
+    <!-- 历史记录 -->
+    <div id="history-modal" class="fixed inset-0 bg-black/95 z-50 hidden flex flex-col p-4 animate-fade-in">
+        <div class="flex justify-between items-center mb-4 border-b border-gray-800 pb-2">
+            <h2 class="text-xl font-bold text-white">📜 历史记录</h2>
+            <button onclick="closeHistory()" class="text-3xl text-gray-400 hover:text-white">&times;</button>
+        </div>
+        <input id="search-input" class="bg-gray-800 p-3 rounded-lg text-white border border-gray-700 w-full mb-4 outline-none" placeholder="🔍 搜索..." oninput="doSearch()">
+        <div id="video-list" class="flex-1 overflow-y-auto space-y-2 pb-4"></div>
+        <div class="mt-2 pt-2 border-t border-gray-800 flex gap-2">
+             <button onclick="clearOldData()" class="flex-1 bg-yellow-900/30 text-yellow-500 text-xs py-3 rounded-lg">🧹 清理30天前</button>
+             <button onclick="clearAllData()" class="flex-1 bg-red-900/30 text-red-500 text-xs py-3 rounded-lg">🗑️ 强制清空</button>
+        </div>
     </div>
-  </div>
+    <div id="player-modal" class="fixed inset-0 bg-black z-[60] hidden flex flex-col justify-center bg-opacity-95">
+        <button onclick="closePlayer()" class="absolute top-6 right-6 text-white text-3xl z-20 bg-gray-800 rounded-full w-12 h-12 flex items-center justify-center">&times;</button>
+        <video id="main-player" controls playsinline class="w-full max-h-[80vh] bg-black"></video>
+        <div class="text-center mt-6"><h3 id="player-title" class="text-xl font-mono text-white mb-4"></h3><a id="download-btn" href="#" download class="bg-blue-600 text-white px-8 py-3 rounded-full font-bold">💾 保存</a></div>
+    </div>
 
-  <script>
-    // ---------- 日志系统 ----------
-    function log(msg, type='info') {
-      const el = document.getElementById('debug-content');
-      const div = document.createElement('div');
-      const time = new Date().toLocaleTimeString().split(' ')[0];
-      div.innerHTML = `<span class="text-gray-500">[${time}]</span> ${msg}`;
-      if(type==='error') div.className = "text-red-400 font-bold border-l-2 border-red-500 pl-2";
-      if(type==='warn') div.className = "text-yellow-400";
-      if(type==='success') div.className = "text-green-400";
-      el.appendChild(div);
-      const container = document.getElementById('debug-console');
-      if(!container.classList.contains('hidden')) container.scrollTop = container.scrollHeight;
-      console.log(msg);
-    }
-    function toggleDebug(){ document.getElementById('debug-console').classList.toggle('hidden'); }
-    function clearLogs(){ document.getElementById('debug-content').innerHTML=''; }
-
-    window.onerror = function(msg, url, line) {
-      log(`系统错误: ${msg} (Line:${line})`, 'error');
-      return false;
-    };
-
-    // ---------- 配置 ----------
-    const DB_NAME = 'PipelineDB';
-    const DUPLICATE_INTERVAL_MS = 1500;
-    const BITRATE = 25000000;
-
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-
-    const SUPPORTED_FORMATS = [
-      Html5QrcodeSupportedFormats.CODE_128,
-      Html5QrcodeSupportedFormats.EAN_13,
-      Html5QrcodeSupportedFormats.EAN_8,
-      Html5QrcodeSupportedFormats.CODE_39,
-      Html5QrcodeSupportedFormats.UPC_A,
-      Html5QrcodeSupportedFormats.ITF
-    ];
-
-    let db, html5QrCode, mediaRecorder;
-    let recordedChunks = [], isRunning = false, isRecording = false;
-    let currentCode = null, lastCodeTime = 0;
-    let stream = null, videoTrack = null, trackCapabilities = {};
-
-    // iOS 原生 BarcodeDetector 兜底
-    let bd = null;
-    let bdTimer = null;
-    let bdRunning = false;
-    let bdLoopMs = 220;          // 原生检测循环间隔
-    let bdBusy = false;
-    let bdLast = 0;
-
-    // 扫描健康统计
-    let scanStat = { hit:0, nativeHit:0, last:'--', since:Date.now() };
-    function updateHealth(extra='') {
-      const s = document.getElementById('scan-health');
-      const sec = Math.max(1, Math.floor((Date.now() - scanStat.since)/1000));
-      s.innerText = `scan: hit=${scanStat.hit} native=${scanStat.nativeHit} ${extra} · ${sec}s`;
-    }
-
-    // 音效
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    function beep(f=1200,d=80){
-      if(audioCtx.state==='suspended') audioCtx.resume();
-      const o=audioCtx.createOscillator(),g=audioCtx.createGain();
-      o.type='square'; o.frequency.value=f;
-      o.connect(g); g.connect(audioCtx.destination);
-      o.start(); setTimeout(()=>o.stop(),d);
-    }
-    function errorBeep(){
-      const n=audioCtx.currentTime,o=audioCtx.createOscillator(),g=audioCtx.createGain();
-      o.type='sawtooth'; o.frequency.value=150;
-      o.connect(g); g.connect(audioCtx.destination);
-      o.start(n); o.stop(n+0.4);
-    }
-
-    // ---------- DB ----------
-    const initDB=()=>{
-      log("正在连接数据库...");
-      const r=indexedDB.open(DB_NAME,1);
-      r.onupgradeneeded=e=>{
-        db=e.target.result;
-        if(!db.objectStoreNames.contains('videos')){
-          const store = db.createObjectStore('videos',{keyPath:'id',autoIncrement:true});
-          store.createIndex('barcode','barcode',{unique:false});
-          // 修复：你后面 clearOldData 用了 created 索引，这里必须创建
-          store.createIndex('created','created',{unique:false});
+    <script>
+        // --- 日志与配置 ---
+        function log(msg) {
+            const el = document.getElementById('log-content');
+            const d = new Date();
+            el.innerHTML += `<div>[${d.getSeconds()}:${d.getMilliseconds()}] ${msg}</div>`;
+            console.log(msg);
         }
-      };
-      r.onsuccess=e=>{ db=e.target.result; log("数据库连接成功", 'success'); updateStorageInfo(); };
-      r.onerror=e=>{ log("数据库错误: "+e.target.error, 'error'); };
-    };
+        function toggleLog() { document.getElementById('debug-log').classList.toggle('hidden'); }
 
-    const checkDuplicate=(c)=>new Promise(r=>{
-      if(!db) return r(false);
-      db.transaction(['videos'],'readonly')
-        .objectStore('videos').index('barcode')
-        .getKey(c).onsuccess=e=>r(!!e.target.result);
-    });
+        const DB_NAME = 'PipelineDB';
+        const DUPLICATE_INTERVAL_MS = 1500; 
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
-    const saveVideo=(b,blob)=>{
-      if(!b||!blob||blob.size===0) return;
-      log(`正在保存视频: ${b} (${(blob.size/1024/1024).toFixed(2)}MB)`);
-      db.transaction(['videos'],'readwrite').objectStore('videos')
-        .add({barcode:b,blob:blob,created:Date.now(),size:blob.size})
-        .onsuccess=()=>{
-          showToast(`✅ ${b} 已归档`);
-          updateStorageInfo();
-          log("保存成功", 'success');
-        };
-    };
+        // 默认配置
+        let currentRes = '720';
+        let currentFormatMode = '1d';
+        
+        let db, html5QrCode, mediaRecorder;
+        let recordedChunks = [], isRunning = false, isRecording = false;
+        let currentCode = null, lastCodeTime = 0;
+        let stream = null, videoTrack = null, trackCapabilities = {};
 
-    // ---------- 核心：启动扫描 ----------
-    function buildQrConfig(preset = null) {
-      // 重点：iOS 别用固定小 qrbox；给它更大/或全画面
-      const vw = Math.min(window.innerWidth, 480);
-      const baseBoxW = Math.floor(vw * 0.92);
-      const baseBoxH = Math.floor(baseBoxW * 0.35); // 条码更扁，给它更长的横向区域
+        // 格式定义
+        const FORMATS_1D = [
+            Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.ITF
+        ];
+        // 全格式 (包括二维码)
+        const FORMATS_ALL = undefined; // undefined 意味着库默认支持所有
 
-      const defaults = {
-        fps: isIOS ? 12 : 30,
-        // iOS 推荐：大框甚至全画面（null）更容易扫到条码
-        qrbox: isIOS ? { width: baseBoxW, height: baseBoxH } : { width: 300, height: 150 },
-        aspectRatio: isIOS ? (16/9) : 1.0,
-        formatsToSupport: SUPPORTED_FORMATS,
-        useBarCodeDetectorIfSupported: !isIOS, // 仍保留：iOS 用我们自己的原生兜底（更可控）
-        disableFlip: isIOS ? true : false
-      };
-
-      if (!preset) return defaults;
-
-      // preset 可覆盖 defaults
-      return {
-        ...defaults,
-        ...preset
-      };
-    }
-
-    function buildConstraints(preset = null) {
-      // iOS 建议：分辨率不要太高（JS 解码很吃性能）
-      const base = {
-        facingMode: "environment",
-        focusMode: "continuous"
-      };
-
-      const iosDefault = {
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      };
-
-      const andDefault = {
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
-      };
-
-      const c = { ...base, ...(isIOS ? iosDefault : andDefault) };
-      if (!preset) return c;
-
-      // preset 允许覆盖 ideal
-      return { ...c, ...preset };
-    }
-
-    async function startPipeline(preset = null) {
-      if (isRunning) { stopPipeline(); return; }
-
-      scanStat = { hit:0, nativeHit:0, last:'--', since:Date.now() };
-      updateHealth();
-
-      log("--- 开始启动流程 ---");
-      log(`设备类型: ${isIOS ? 'iOS' : 'Android/PC'}`);
-
-      try {
-        if (!html5QrCode) html5QrCode = new Html5Qrcode("scanner-container");
-
-        const constraints = buildConstraints(preset?.constraints || null);
-        const config = buildQrConfig(preset?.config || null);
-
-        log(`请求分辨率: ${constraints.width?.ideal || '--'}x${constraints.height?.ideal || '--'}`);
-        log(`扫描参数: fps=${config.fps}, qrbox=${config.qrbox ? (config.qrbox.width+'x'+config.qrbox.height) : 'FULL'}, aspect=${config.aspectRatio}, flip=${!config.disableFlip}`);
-
-        const qrCodeSuccessCallback = (decodedText, decodedResult) => {
-          scanStat.hit++;
-          scanStat.last = decodedText;
-          updateHealth(`last=${decodedText}`);
-          handleBarcode(decodedText);
-        };
-
-        log("正在启动摄像头...");
-        await html5QrCode.start(
-          constraints,
-          config,
-          qrCodeSuccessCallback,
-          (errMsg)=>{ /* 实时扫描错误一般很多，不刷屏 */ }
-        );
-
-        log("摄像头启动成功!", 'success');
-
-        const videoElement = document.querySelector("#scanner-container video");
-        if(videoElement) {
-          stream = videoElement.srcObject;
-          videoTrack = stream.getVideoTracks()[0];
-          const settings = videoTrack.getSettings();
-          log(`实际分辨率: ${settings.width}x${settings.height}`);
-
-          trackCapabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-          log(`支持变焦: ${!!trackCapabilities.zoom}, 支持手电: ${!!trackCapabilities.torch}`);
-
-          const slider = document.getElementById('zoom-slider');
-          if (trackCapabilities.zoom) {
-            slider.min = trackCapabilities.zoom.min;
-            slider.max = trackCapabilities.zoom.max;
-            slider.step = 0.1;
-
-            let z = isIOS ? 2.0 : 1.2;
-            z = Math.min(parseFloat(slider.max), z);
-            slider.value = z;
-            slider.disabled = false;
-            await applyZoom(z);
-            log(`应用初始变焦: ${z}x`);
-          } else {
-            slider.disabled = true;
-            log("当前摄像头不支持变焦", 'warn');
-          }
-
-          document.getElementById('torch-btn').disabled = !trackCapabilities.torch;
+        // 实验室配置切换
+        function setRes(res) {
+            currentRes = res;
+            document.querySelectorAll('[id^="btn-"]').forEach(b => { if(b.id.includes(res)) b.classList.add('active'); else if(!b.id.includes('btn-1d') && !b.id.includes('btn-all')) b.classList.remove('active'); });
+            restartWithConfig();
         }
-
-        isRunning = true;
-        updateUIState(true);
-
-        // iOS 原生 BarcodeDetector 兜底：能用就开
-        setupBarcodeDetector();
-        startNativeDetectorLoop();
-
-      } catch (err) {
-        log(`启动崩溃: ${err.message}`, 'error');
-        alert("启动失败，请查看调试日志");
-        stopPipeline();
-      }
-    }
-
-    async function stopPipeline() {
-      log("正在停止...");
-      stopRecording(true);
-
-      stopNativeDetectorLoop();
-
-      try {
-        if (html5QrCode) await html5QrCode.stop();
-        log("扫描器已停止");
-      } catch(e){
-        log("停止扫描器失败:"+e, 'warn');
-      }
-
-      isRunning = false;
-      updateUIState(false);
-    }
-
-    async function applyZoom(val) {
-      if(videoTrack && trackCapabilities.zoom) {
-        try {
-          await videoTrack.applyConstraints({ advanced: [{ zoom: parseFloat(val) }] });
-        } catch(e) {
-          log("变焦失败:"+e, 'warn');
+        function setFormat(fmt) {
+            currentFormatMode = fmt;
+            document.getElementById('btn-1d').classList.toggle('active', fmt==='1d');
+            document.getElementById('btn-all').classList.toggle('active', fmt==='all');
+            restartWithConfig();
         }
-      }
-    }
-
-    let torchOn = false;
-    async function toggleTorch() {
-      if(videoTrack && trackCapabilities.torch) {
-        torchOn = !torchOn;
-        try {
-          await videoTrack.applyConstraints({ advanced: [{ torch: torchOn }] });
-          document.getElementById('torch-btn').classList.toggle('bg-yellow-500', torchOn);
-          log(`手电筒: ${torchOn}`);
-        } catch(e) {
-          log("手电筒失败:"+e, 'error');
-        }
-      } else {
-        log("不支持手电筒", 'warn');
-      }
-    }
-
-    // ---------- iOS 原生 BarcodeDetector 兜底 ----------
-    function setupBarcodeDetector() {
-      const badge = document.getElementById('bd-badge');
-
-      if (!isIOS) {
-        badge.innerText = 'N/A';
-        badge.className = 'text-gray-500';
-        return;
-      }
-
-      if ('BarcodeDetector' in window) {
-        try {
-          // 常见格式列表（iOS 支持集合因版本不同，不能全写死）
-          // 尽量写“常见的”避免创建失败
-          bd = new BarcodeDetector({
-            formats: ['code_128','ean_13','ean_8','code_39','upc_a','itf']
-          });
-          badge.innerText = 'ON';
-          badge.className = 'text-green-400 font-bold';
-          log("iOS 原生 BarcodeDetector: 可用 ✅", 'success');
-        } catch (e) {
-          bd = null;
-          badge.innerText = 'ERR';
-          badge.className = 'text-red-400 font-bold';
-          log("iOS BarcodeDetector 初始化失败: " + e, 'warn');
-        }
-      } else {
-        bd = null;
-        badge.innerText = 'OFF';
-        badge.className = 'text-yellow-400 font-bold';
-        log("iOS 原生 BarcodeDetector: 不支持（系统版本可能偏低）", 'warn');
-      }
-    }
-
-    function startNativeDetectorLoop() {
-      if (!isIOS || !bd || !stream) return;
-      if (bdRunning) return;
-
-      bdRunning = true;
-      log(`启动 iOS 原生兜底扫描循环 (每 ${bdLoopMs}ms)`, 'success');
-
-      const videoEl = document.querySelector("#scanner-container video");
-      if (!videoEl) { log("找不到 video 元素，无法启动原生兜底", 'warn'); return; }
-
-      // 用 canvas 截帧给 BarcodeDetector
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-      bdTimer = setInterval(async () => {
-        if (!bdRunning) return;
-        if (bdBusy) return;
-
-        // 降低频率/避免卡顿
-        const now = Date.now();
-        if (now - bdLast < bdLoopMs) return;
-        bdLast = now;
-
-        try {
-          bdBusy = true;
-
-          const w = videoEl.videoWidth || 0;
-          const h = videoEl.videoHeight || 0;
-          if (!w || !h) return;
-
-          // 截一张“更适合条码”的中部横条区域（条码一般横向）
-          // 这样比全画面更快、也更聚焦
-          const cropH = Math.floor(h * 0.45);
-          const cropY = Math.floor((h - cropH) / 2);
-          const cropX = 0;
-          const cropW = w;
-
-          canvas.width = cropW;
-          canvas.height = cropH;
-          ctx.drawImage(videoEl, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
-
-          const results = await bd.detect(canvas);
-          if (results && results.length) {
-            const raw = results[0].rawValue;
-            if (raw) {
-              scanStat.nativeHit++;
-              updateHealth(`native=${raw}`);
-              log(`🍎 原生识别到: ${raw}`, 'success');
-              handleBarcode(raw);
+        function restartWithConfig() {
+            if(isRunning) {
+                stopPipeline().then(() => setTimeout(startPipeline, 500));
             }
-          }
-        } catch (e) {
-          // 不刷屏：只偶尔提示
-          // log("原生兜底扫描异常: "+e, 'warn');
-        } finally {
-          bdBusy = false;
+            updateConfigDesc();
         }
-      }, 80); // setInterval 频率高一点，但内部用 bdLoopMs 控制
-    }
-
-    function stopNativeDetectorLoop() {
-      bdRunning = false;
-      if (bdTimer) clearInterval(bdTimer);
-      bdTimer = null;
-    }
-
-    // ---------- 条码逻辑 ----------
-    async function handleBarcode(code) {
-      log(`识别到: ${code}`, 'success');
-
-      const now = Date.now();
-
-      if (code === currentCode && (now - lastCodeTime < DUPLICATE_INTERVAL_MS)) return;
-
-      if (code !== currentCode) {
-        if (await checkDuplicate(code)) {
-          if (now - lastCodeTime < DUPLICATE_INTERVAL_MS) return;
-          errorBeep();
-          showToast(`⚠️ 重复: ${code}`, true);
-          lastCodeTime = now;
-          return;
+        function updateConfigDesc() {
+            const resMap = {'720': '720P (稳)', '1080': '1080P', '4k': '4K'};
+            const fmtMap = {'1d': '仅条形码', 'all': '全格式'};
+            document.getElementById('config-desc').innerText = `配置: ${resMap[currentRes]} / ${fmtMap[currentFormatMode]}`;
         }
-      }
 
-      lastCodeTime = now;
-      triggerSlice(code);
-    }
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function beep(f=1200,d=80){if(audioCtx.state==='suspended')audioCtx.resume();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='square';o.frequency.value=f;o.connect(g);g.connect(audioCtx.destination);o.start();setTimeout(()=>o.stop(),d);}
+        function errorBeep(){const n=audioCtx.currentTime,o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sawtooth';o.frequency.value=150;o.connect(g);g.connect(audioCtx.destination);o.start(n);o.stop(n+0.4);}
 
-    function triggerSlice(newCode) {
-      beep(1200, 80);
+        const initDB=()=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=e=>{db=e.target.result;if(!db.objectStoreNames.contains('videos')){db.createObjectStore('videos',{keyPath:'id',autoIncrement:true}).createIndex('barcode','barcode');}};r.onsuccess=e=>{db=e.target.result;updateStorageInfo();};};
+        const checkDuplicate=(c)=>new Promise(r=>{if(!db)return r(!1);db.transaction(['videos'],'readonly').objectStore('videos').index('barcode').getKey(c).onsuccess=e=>r(!!e.target.result);});
+        const saveVideo=(b,blob)=>{if(!b||!blob||blob.size===0)return;db.transaction(['videos'],'readwrite').objectStore('videos').add({barcode:b,blob:blob,created:Date.now(),size:blob.size}).onsuccess=()=>{showToast(`✅ ${b} 已归档`);updateStorageInfo();};};
 
-      const el = document.getElementById('current-barcode');
-      el.innerText = newCode;
-      el.className = "text-2xl font-mono text-white font-bold tracking-widest scale-110 transition-transform";
-      setTimeout(()=> el.className = "text-xl font-mono text-green-400 font-bold tracking-wider", 200);
+        // --- 获取摄像头列表 ---
+        function getCameras() {
+            Html5Qrcode.getCameras().then(devices => {
+                const sel = document.getElementById('camera-select');
+                sel.innerHTML = '<option value="">自动选择</option>';
+                if (devices && devices.length) {
+                    devices.forEach((d, idx) => {
+                        const opt = document.createElement('option');
+                        opt.value = d.id;
+                        opt.text = d.label || `摄像头 ${idx+1}`;
+                        sel.appendChild(opt);
+                    });
+                    log(`发现 ${devices.length} 个摄像头`);
+                }
+            }).catch(err => log("获取摄像头失败: " + err));
+        }
 
-      if (isRecording) stopRecording();
-      currentCode = newCode;
-      startRecording();
-    }
+        async function startPipeline() {
+            if (isRunning) { stopPipeline(); return; }
 
-    function startRecording() {
-      if (!stream) { log("录制失败: 无视频流", 'error'); return; }
-      recordedChunks = [];
+            try {
+                if (!html5QrCode) html5QrCode = new Html5Qrcode("scanner-container");
 
-      let options = { mimeType: 'video/mp4', videoBitsPerSecond: BITRATE };
-      if (!MediaRecorder.isTypeSupported('video/mp4')) {
-        options = { mimeType: 'video/webm', videoBitsPerSecond: BITRATE };
-      }
+                // 1. 构建分辨率约束
+                let widthIdeal, heightIdeal;
+                if (currentRes === '720') { widthIdeal = 1280; heightIdeal = 720; }
+                else if (currentRes === '1080') { widthIdeal = 1920; heightIdeal = 1080; }
+                else { widthIdeal = 3840; heightIdeal = 2160; } // 4K
 
-      try {
-        mediaRecorder = new MediaRecorder(stream, options);
-      } catch (e) {
-        log("高清录制失败，降级尝试", 'warn');
-        mediaRecorder = new MediaRecorder(stream);
-      }
+                const selectedCamId = document.getElementById('camera-select').value;
+                
+                const constraints = { 
+                    focusMode: "continuous", 
+                    width: { ideal: widthIdeal }, 
+                    height: { ideal: heightIdeal } 
+                };
+                if (selectedCamId) {
+                    constraints.deviceId = { exact: selectedCamId };
+                } else {
+                    constraints.facingMode = "environment";
+                }
 
-      mediaRecorder.ondataavailable = e => { if(e.data.size > 0) recordedChunks.push(e.data); };
+                // 2. 构建格式配置
+                const formats = currentFormatMode === '1d' ? FORMATS_1D : FORMATS_ALL;
+                
+                // 3. 构建核心配置
+                // iOS 核心要点：分辨率不能太高，useBarCodeDetectorIfSupported 必须关掉（如果卡顿的话）
+                // 我们这里让 Android 开启硬件加速，iOS 关闭
+                const useNative = !isIOS; 
 
-      let clipCode = currentCode;
-      mediaRecorder.onstop = () => {
-        log(`录制结束: ${clipCode}`);
-        const finalType = recordedChunks[0] ? recordedChunks[0].type : options.mimeType;
-        saveVideo(clipCode, new Blob(recordedChunks, { type: finalType }));
-      };
+                const config = { 
+                    fps: 30, 
+                    qrbox: { width: 300, height: 150 }, 
+                    aspectRatio: 1.0, 
+                    formatsToSupport: formats, 
+                    useBarCodeDetectorIfSupported: useNative,
+                    videoConstraints: constraints 
+                };
 
-      mediaRecorder.start();
-      isRecording = true;
-      log(`开始录制: ${currentCode}`);
+                log(`启动配置: Res=${currentRes}, Fmt=${currentFormatMode}, Native=${useNative}`);
 
-      document.getElementById('rec-badge').classList.remove('hidden');
-      document.getElementById('scanner-container').classList.add('recording-border');
-    }
+                await html5QrCode.start(
+                    selectedCamId ? { deviceId: { exact: selectedCamId } } : constraints, 
+                    config, 
+                    handleBarcode, 
+                    () => {}
+                );
 
-    function stopRecording(force = false) {
-      if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-      isRecording = false;
-      document.getElementById('rec-badge').classList.add('hidden');
-      document.getElementById('scanner-container').classList.remove('recording-border');
-      if(force) document.getElementById('current-barcode').innerText = "PAUSED";
-    }
+                const videoElement = document.querySelector("#scanner-container video");
+                stream = videoElement.srcObject;
+                videoTrack = stream.getVideoTracks()[0];
+                const settings = videoTrack.getSettings();
+                log(`实际分辨率: ${settings.width}x${settings.height}`);
+                
+                trackCapabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
 
-    function manualTriggerDialog(){
-      const c = prompt("输入单号:");
-      if(c && c.trim()) handleBarcode(c.trim());
-    }
+                const slider = document.getElementById('zoom-slider');
+                if (trackCapabilities.zoom) {
+                    slider.min = trackCapabilities.zoom.min; slider.max = trackCapabilities.zoom.max; slider.step = 0.1;
+                    // iOS 如果切了 720P，变焦稍微拉大一点有助于对焦
+                    let z = isIOS ? 2.0 : 1.2;
+                    z = Math.min(slider.max, z);
+                    slider.value = z; slider.disabled = false;
+                    applyZoom(z);
+                } else { slider.disabled = true; }
+                
+                document.getElementById('torch-btn').disabled = !trackCapabilities.torch;
+                isRunning = true; updateUIState(true);
 
-    function updateUIState(running) {
-      const btn = document.getElementById('main-btn'), line = document.getElementById('scan-line-el');
-      if (running) {
-        btn.innerText = "⏹ 停止";
-        btn.className = "w-full bg-red-600 text-white py-4 rounded-xl font-bold text-xl shadow-lg animate-pulse";
-        line.classList.remove('hidden');
-      } else {
-        btn.innerText = "📸 启动扫描";
-        btn.className = "w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-xl shadow-lg";
-        line.classList.add('hidden');
-      }
-    }
-
-    function showToast(msg, isErr) {
-      const t = document.getElementById('toast'), txt = document.getElementById('toast-text');
-      txt.innerText = msg;
-      txt.className = isErr
-        ? "bg-yellow-500 text-black px-6 py-4 rounded-xl text-xl font-bold shadow-2xl border-4 border-yellow-600 block"
-        : "bg-green-600/90 text-white px-6 py-4 rounded-xl text-xl font-bold shadow-2xl backdrop-blur block";
-      t.classList.remove('opacity-0');
-      setTimeout(() => t.classList.add('opacity-0'), 1500);
-    }
-
-    async function updateStorageInfo() {
-      try {
-        const { usage } = await navigator.storage.estimate();
-        document.getElementById('storage-info').innerText = `已用: ${(usage/1024/1024).toFixed(0)} MB`;
-      } catch(e){}
-    }
-
-    function showHistory() { document.getElementById('history-modal').classList.remove('hidden'); doSearch(); }
-    function closeHistory() { document.getElementById('history-modal').classList.add('hidden'); }
-
-    function openPlayer(blob, title) {
-      const url = URL.createObjectURL(blob), v = document.getElementById('main-player');
-      v.src = url; v.play();
-      document.getElementById('player-title').innerText = title;
-      const d = document.getElementById('download-btn');
-      d.href = url; d.download = `${title}.mp4`;
-      document.getElementById('player-modal').classList.remove('hidden');
-    }
-
-    function closePlayer() {
-      document.getElementById('main-player').pause();
-      document.getElementById('player-modal').classList.add('hidden');
-    }
-
-    function doSearch() {
-      const q = document.getElementById('search-input').value.trim();
-      const list = document.getElementById('video-list');
-      list.innerHTML = '';
-      let lim = 50;
-
-      db.transaction(['videos'], 'readonly').objectStore('videos')
-        .openCursor(null, 'prev').onsuccess = e => {
-          const c = e.target.result;
-          if(c && lim > 0) {
-            if(!q || c.value.barcode.includes(q)) {
-              const i = c.value, d = new Date(i.created);
-              const ds = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2,'0')}`;
-              const div = document.createElement('div');
-              div.className = "bg-gray-800 p-3 rounded-lg border-l-4 border-blue-500 mb-2 flex justify-between items-center cursor-pointer active:bg-gray-700";
-              div.onclick = () => openPlayer(i.blob, i.barcode);
-              div.innerHTML = `<div>
-                <div class="font-bold text-lg font-mono">${i.barcode}</div>
-                <div class="text-xs text-gray-500">${ds} · ${(i.size/1024/1024).toFixed(1)}MB</div>
-              </div><div class="text-2xl text-blue-500">▶</div>`;
-              list.appendChild(div);
-              lim--;
+            } catch (err) {
+                log("启动失败: " + err);
+                alert("启动失败: " + err.message);
+                stopPipeline();
             }
-            c.continue();
-          }
-        };
-    }
-
-    function clearOldData() {
-      if(!confirm("删除30天前的数据？")) return;
-      const m = Date.now()-(30*24*60*60*1000);
-      const tx = db.transaction(['videos'],'readwrite');
-      const store = tx.objectStore('videos');
-      const idx = store.index('created');
-
-      idx.getAllKeys(IDBKeyRange.upperBound(m)).onsuccess = e => {
-        const keys = e.target.result;
-        if(!keys.length) return alert("无旧数据");
-        keys.forEach(key=>store.delete(key));
-        tx.oncomplete=()=>{ alert(`清理了 ${keys.length} 条`); doSearch(); updateStorageInfo(); };
-      };
-    }
-
-    function clearAllData() {
-      if(!confirm("⚠️ 确定清空所有？")) return;
-      if(db) db.close();
-      indexedDB.deleteDatabase(DB_NAME).onsuccess=()=>{ alert("已清空"); location.reload(); };
-    }
-
-    // ---------- 🍎 iOS 扫描压力测试：自动换参数 ----------
-    let testing = false;
-    function setTestBadge(on){
-      const el = document.getElementById('test-badge');
-      el.innerText = on ? 'ON' : 'OFF';
-      el.className = on ? 'text-pink-300 font-bold' : 'text-gray-500';
-      document.getElementById('ios-test-btn').disabled = on;
-      document.getElementById('ios-test-btn').classList.toggle('opacity-50', on);
-    }
-
-    async function runIosScanTest() {
-      if (!isIOS) {
-        alert("这套测试主要给 iOS 用，安卓本来就能秒扫。");
-        return;
-      }
-
-      if (testing) return;
-      testing = true;
-      setTestBadge(true);
-      log("🍎 开始 iOS 扫描压力测试：将依次切换 4 组参数，每组约 8 秒", 'warn');
-
-      const presets = [
-        {
-          name: "P1: 大qrbox + 720p + fps12",
-          constraints: { width:{ideal:1280}, height:{ideal:720} },
-          config: { fps: 12, qrbox: null, aspectRatio: 16/9, disableFlip: true } // FULL 画面
-        },
-        {
-          name: "P2: 大qrbox(动态) + 720p + fps15",
-          constraints: { width:{ideal:1280}, height:{ideal:720} },
-          config: { fps: 15, aspectRatio: 16/9, disableFlip: true } // 用 build 默认动态 qrbox
-        },
-        {
-          name: "P3: 1080p + fps10（更清晰但更吃性能）",
-          constraints: { width:{ideal:1920}, height:{ideal:1080} },
-          config: { fps: 10, qrbox: null, aspectRatio: 16/9, disableFlip: true }
-        },
-        {
-          name: "P4: 720p + fps8（更省性能）",
-          constraints: { width:{ideal:1280}, height:{ideal:720} },
-          config: { fps: 8, qrbox: null, aspectRatio: 16/9, disableFlip: true }
         }
-      ];
 
-      try {
-        for (let i=0;i<presets.length;i++){
-          const p = presets[i];
-          log(`🧪 测试 ${i+1}/${presets.length}: ${p.name}`, 'warn');
-
-          // 确保停干净
-          if (isRunning) await stopPipeline();
-
-          // 启动该 preset
-          await startPipeline({ constraints: p.constraints, config: p.config });
-
-          // 跑 8 秒
-          await waitMs(8000);
-
-          // 如果这段时间有命中，就标记一下
-          log(`🧪 ${p.name} 结果：hit=${scanStat.hit}, native=${scanStat.nativeHit}`, 'success');
+        async function stopPipeline() {
+            stopRecording(true);
+            try { await html5QrCode.stop(); } catch(e){}
+            isRunning = false; updateUIState(false);
         }
-      } catch(e) {
-        log("iOS 测试模式异常: " + e, 'error');
-      } finally {
-        // 测完回到“正常模式”启动一次（用默认逻辑）
-        if (isRunning) await stopPipeline();
-        log("🍎 iOS 扫描压力测试结束：已回到待机状态", 'success');
-        testing = false;
-        setTestBadge(false);
-      }
-    }
 
-    function waitMs(ms){ return new Promise(r=>setTimeout(r, ms)); }
+        async function applyZoom(val) { if(videoTrack&&trackCapabilities.zoom) try{await videoTrack.applyConstraints({advanced:[{zoom:parseFloat(val)}]});}catch(e){} }
+        let torchOn = false;
+        async function toggleTorch() { if(videoTrack&&trackCapabilities.torch) { torchOn=!torchOn; try{await videoTrack.applyConstraints({advanced:[{torch:torchOn}]});document.getElementById('torch-btn').classList.toggle('bg-yellow-500',torchOn);}catch(e){} } }
 
-    // ---------- 页面启动 ----------
-    window.onload = () => { initDB(); updateHealth(); };
-  </script>
+        async function handleBarcode(code) {
+            log(`Scan: ${code}`);
+            const now = Date.now();
+            if (code === currentCode && (now - lastCodeTime < DUPLICATE_INTERVAL_MS)) return;
+            if (code !== currentCode) {
+                if (await checkDuplicate(code)) {
+                    if (now - lastCodeTime < DUPLICATE_INTERVAL_MS) return;
+                    errorBeep(); showToast(`⚠️ 重复: ${code}`, true); lastCodeTime = now; return;
+                }
+            }
+            lastCodeTime = now; triggerSlice(code);
+        }
+
+        function triggerSlice(newCode) {
+            beep(1200, 80);
+            const el = document.getElementById('current-barcode');
+            el.innerText = newCode; 
+            el.className = "text-2xl font-mono text-white font-bold tracking-widest scale-110 transition-transform";
+            setTimeout(()=> el.className = "text-xl font-mono text-green-400 font-bold tracking-wider", 200);
+            if (isRecording) stopRecording();
+            currentCode = newCode; startRecording();
+        }
+
+        function startRecording() {
+            if (!stream) return;
+            recordedChunks = [];
+            let options = { mimeType: 'video/mp4', videoBitsPerSecond: 25000000 }; 
+            if (!MediaRecorder.isTypeSupported('video/mp4')) options = { mimeType: 'video/webm', videoBitsPerSecond: 25000000 };
+            try { mediaRecorder = new MediaRecorder(stream, options); } catch (e) { mediaRecorder = new MediaRecorder(stream); }
+            mediaRecorder.ondataavailable = e => { if(e.data.size > 0) recordedChunks.push(e.data); };
+            let clipCode = currentCode;
+            mediaRecorder.onstop = () => {
+                const finalType = recordedChunks[0] ? recordedChunks[0].type : options.mimeType;
+                saveVideo(clipCode, new Blob(recordedChunks, { type: finalType }));
+            };
+            mediaRecorder.start();
+            isRecording = true; 
+            document.getElementById('rec-badge').classList.remove('hidden'); 
+            document.getElementById('scan-line-el').classList.remove('hidden');
+        }
+
+        function stopRecording(force = false) {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+            isRecording = false; 
+            document.getElementById('rec-badge').classList.add('hidden'); 
+            document.getElementById('scan-line-el').classList.add('hidden');
+            if(force) document.getElementById('current-barcode').innerText = "PAUSED";
+        }
+
+        function manualTriggerDialog() { const c = prompt("输入单号:"); if(c&&c.trim()) handleBarcode(c.trim()); }
+
+        function updateUIState(running) {
+            const btn = document.getElementById('main-btn');
+            if (running) { 
+                btn.innerText = "⏹ 停止"; 
+                btn.className = "w-full bg-red-600 text-white py-4 rounded-xl font-bold text-xl shadow-lg animate-pulse"; 
+            } else { 
+                btn.innerText = "📸 启动扫描"; 
+                btn.className = "w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-xl shadow-lg"; 
+            }
+        }
+
+        function showToast(msg, isErr) {
+            const t = document.getElementById('toast'), txt = document.getElementById('toast-text');
+            txt.innerText = msg; 
+            txt.className = isErr ? "bg-yellow-500 text-black px-6 py-4 rounded-xl text-xl font-bold shadow-2xl border-4 border-yellow-600 block" : "bg-green-600/90 text-white px-6 py-4 rounded-xl text-xl font-bold shadow-2xl backdrop-blur block";
+            t.classList.remove('opacity-0'); setTimeout(() => t.classList.add('opacity-0'), 1500);
+        }
+
+        async function updateStorageInfo() { try { const { usage } = await navigator.storage.estimate(); document.getElementById('storage-info').innerText = `已用: ${(usage/1024/1024).toFixed(0)} MB`; } catch(e){} }
+        function showHistory() { document.getElementById('history-modal').classList.remove('hidden'); doSearch(); }
+        function closeHistory() { document.getElementById('history-modal').classList.add('hidden'); }
+        function openPlayer(blob, title) {
+            const url = URL.createObjectURL(blob), v = document.getElementById('main-player'); v.src = url; v.play(); document.getElementById('player-title').innerText = title;
+            const d = document.getElementById('download-btn'); d.href = url; d.download = `${title}.mp4`; document.getElementById('player-modal').classList.remove('hidden');
+        }
+        function closePlayer() { document.getElementById('main-player').pause(); document.getElementById('player-modal').classList.add('hidden'); }
+        function doSearch() {
+            const q = document.getElementById('search-input').value.trim(), list = document.getElementById('video-list'); list.innerHTML = ''; let lim = 50;
+            db.transaction(['videos'], 'readonly').objectStore('videos').openCursor(null, 'prev').onsuccess = e => {
+                const c = e.target.result; if(c && lim > 0) {
+                    if(!q || c.value.barcode.includes(q)) {
+                        const i = c.value, d = new Date(i.created), ds = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2,'0')}`;
+                        const div = document.createElement('div'); div.className = "bg-gray-800 p-3 rounded-lg border-l-4 border-blue-500 mb-2 flex justify-between items-center cursor-pointer active:bg-gray-700";
+                        div.onclick = () => openPlayer(i.blob, i.barcode); div.innerHTML = `<div><div class="font-bold text-lg font-mono">${i.barcode}</div><div class="text-xs text-gray-500">${ds} · ${(i.size/1024/1024).toFixed(1)}MB</div></div><div class="text-2xl text-blue-500">▶</div>`;
+                        list.appendChild(div); lim--;
+                    } c.continue();
+                }
+            };
+        }
+        function clearOldData() { if(!confirm("删除30天前的数据？")) return; const m = Date.now()-(30*24*60*60*1000), tx=db.transaction(['videos'],'readwrite'); tx.objectStore('videos').index('created').getAllKeys(IDBKeyRange.upperBound(m)).onsuccess=e=>{const k=e.target.result;if(!k.length)return alert("无旧数据");k.forEach(key=>tx.objectStore('videos').delete(key));tx.oncomplete=()=>{alert(`清理了 ${k.length} 条`);doSearch();updateStorageInfo();};}; }
+        function clearAllData() { if(!confirm("⚠️ 确定清空所有？")) return; if(db) db.close(); indexedDB.deleteDatabase(DB_NAME).onsuccess=()=>{alert("已清空");location.reload();}; }
+
+        window.onload = () => { initDB(); getCameras(); };
+    </script>
 </body>
 </html>
