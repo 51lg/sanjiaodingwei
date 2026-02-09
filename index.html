@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>📦 极速存证终端(iOS修复)</title>
+    <title>📦 存证终端(调试版)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <style>
@@ -11,7 +11,7 @@
         .hidden { display: none !important; }
         
         #scanner-container { 
-            width: 100%; height: 55vh; background: #000; border-radius: 12px; overflow: hidden; border: 2px solid #333; 
+            width: 100%; height: 50vh; background: #000; border-radius: 12px; overflow: hidden; border: 2px solid #333; 
             position: relative;
         }
         #scanner-container video { object-fit: cover !important; width: 100% !important; height: 100% !important; }
@@ -28,32 +28,37 @@
         input[type=range]::-webkit-slider-thumb {
             -webkit-appearance: none; height: 24px; width: 24px; border-radius: 50%; background: #3b82f6; cursor: pointer; margin-top: -10px; box-shadow: 0 0 10px rgba(59,130,246,0.5); border: 2px solid white;
         }
-        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #4b5563; border-radius: 2px; }
     </style>
 </head>
 <body class="p-4 flex flex-col h-screen pb-safe">
 
-    <!-- 顶部状态栏 -->
+    <!-- 顶部 -->
     <div class="flex justify-between items-center mb-2">
         <div>
             <h1 class="text-lg font-bold text-white flex items-center gap-2">
                 🚀 存证终端
-                <span class="text-[10px] bg-green-600 px-1 rounded font-mono" id="sys-badge">ONLINE</span>
+                <span class="text-[10px] bg-yellow-600 px-1 rounded font-mono" id="sys-badge">DEBUG</span>
             </h1>
         </div>
         <div class="flex gap-2">
+             <button onclick="toggleDebug()" class="bg-gray-800 text-xs px-2 py-1 rounded border border-gray-600 text-yellow-400">🐞 调试日志</button>
              <button onclick="toggleTorch()" id="torch-btn" class="bg-gray-800 p-2 rounded-full border border-gray-600 active:bg-yellow-600 disabled:opacity-50 transition-colors">🔦</button>
         </div>
     </div>
 
-    <!-- HTTPS 警告 -->
-    <div id="https-warning" class="hidden bg-red-900/80 border border-red-500 text-white p-4 rounded-lg mb-4 text-sm animate-pulse">
-        <p class="font-bold text-lg mb-1">⚠️ 安全限制警告</p>
-        <p>当前不是 HTTPS 环境，摄像头无法启动。</p>
-        <p class="mt-2 font-bold text-yellow-300">请部署到 GitHub Pages 或使用 HTTPS。</p>
+    <!-- 调试窗口 -->
+    <div id="debug-console" class="hidden fixed top-0 left-0 w-full h-full bg-black/95 z-[100] p-4 font-mono text-xs overflow-y-auto text-green-400">
+        <div class="flex justify-between items-center border-b border-gray-700 pb-2 mb-2 sticky top-0 bg-black">
+            <span class="font-bold text-white">系统日志</span>
+            <div class="flex gap-2">
+                <button onclick="clearLogs()" class="text-blue-400 border border-blue-900 px-2 rounded">清空</button>
+                <button onclick="toggleDebug()" class="text-red-500 border border-red-900 px-2 rounded">关闭 X</button>
+            </div>
+        </div>
+        <div id="debug-content" class="space-y-1 pb-20"></div>
     </div>
 
-    <!-- 主扫描/录像窗口 -->
+    <!-- 扫描区 -->
     <div id="scanner-wrapper" class="relative shadow-2xl rounded-xl overflow-hidden bg-gray-900">
         <div id="scanner-container"></div>
         <div class="absolute top-4 left-4 bg-black/60 backdrop-blur px-3 py-1 rounded border border-white/20 z-10">
@@ -67,61 +72,77 @@
         </div>
     </div>
 
-    <!-- 变焦控制条 -->
+    <!-- 变焦 -->
     <div class="mt-4 mb-2 bg-gray-900 p-3 rounded-lg border border-gray-800 flex items-center gap-3">
         <span class="text-xs text-gray-400">1x</span>
         <input type="range" id="zoom-slider" min="1" max="5" step="0.1" value="1" disabled oninput="applyZoom(this.value)">
         <span class="text-xs text-gray-400">5x</span>
     </div>
 
-    <!-- 底部操作区 -->
+    <!-- 底部按钮 -->
     <div class="flex-1 flex flex-col justify-end gap-3">
         <button onclick="startPipeline()" id="main-btn" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold text-xl shadow-lg transition-all border border-blue-400/30 active:scale-95">
-            📸 启动扫描 (iOS兼容)
+            📸 启动扫描
         </button>
         <div class="flex justify-between items-center px-1">
             <div class="flex gap-4">
-                <a href="#" onclick="showHistory()" class="text-sm text-gray-400 hover:text-white">📂 历史记录</a>
-                <a href="#" onclick="manualTriggerDialog()" class="text-sm text-gray-400 hover:text-white">⌨️ 手动输单</a>
+                <a href="#" onclick="showHistory()" class="text-sm text-gray-400 hover:text-white">📂 历史</a>
+                <a href="#" onclick="manualTriggerDialog()" class="text-sm text-gray-400 hover:text-white">⌨️ 输单</a>
             </div>
-            <span id="storage-info" class="text-[10px] text-gray-600 font-mono">存储: 计算中...</span>
+            <span id="storage-info" class="text-[10px] text-gray-600 font-mono">存储: --</span>
         </div>
     </div>
 
-    <!-- 历史记录全屏弹窗 -->
+    <!-- 弹窗部分省略，保持不变，主要修改逻辑和日志 -->
     <div id="history-modal" class="fixed inset-0 bg-black/95 z-50 hidden flex flex-col p-4 animate-fade-in">
         <div class="flex justify-between items-center mb-4 border-b border-gray-800 pb-2">
             <h2 class="text-xl font-bold text-white">📜 历史记录</h2>
             <button onclick="closeHistory()" class="text-3xl text-gray-400 hover:text-white">&times;</button>
         </div>
-        <input id="search-input" class="bg-gray-800 p-3 rounded-lg text-white border border-gray-700 w-full mb-4 outline-none focus:border-blue-500" placeholder="🔍 输入单号搜索..." oninput="doSearch()">
+        <input id="search-input" class="bg-gray-800 p-3 rounded-lg text-white border border-gray-700 w-full mb-4 outline-none" placeholder="🔍 搜索..." oninput="doSearch()">
         <div id="video-list" class="flex-1 overflow-y-auto space-y-2 pb-4"></div>
         <div class="mt-2 pt-2 border-t border-gray-800 flex gap-2">
-             <button onclick="clearOldData()" class="flex-1 bg-yellow-900/30 text-yellow-500 text-xs py-3 rounded-lg border border-yellow-800">🧹 清理30天前</button>
-             <button onclick="clearAllData()" class="flex-1 bg-red-900/30 text-red-500 text-xs py-3 rounded-lg border border-red-800">🗑️ 强制清空</button>
+             <button onclick="clearOldData()" class="flex-1 bg-yellow-900/30 text-yellow-500 text-xs py-3 rounded-lg">🧹 清理30天前</button>
+             <button onclick="clearAllData()" class="flex-1 bg-red-900/30 text-red-500 text-xs py-3 rounded-lg">🗑️ 强制清空</button>
         </div>
     </div>
-
-    <!-- 视频播放器弹窗 -->
+    
     <div id="player-modal" class="fixed inset-0 bg-black z-[60] hidden flex flex-col justify-center bg-opacity-95">
         <button onclick="closePlayer()" class="absolute top-6 right-6 text-white text-3xl z-20 bg-gray-800 rounded-full w-12 h-12 flex items-center justify-center">&times;</button>
         <video id="main-player" controls playsinline class="w-full max-h-[80vh] bg-black"></video>
-        <div class="text-center mt-6">
-            <h3 id="player-title" class="text-xl font-mono font-bold text-white mb-4"></h3>
-            <a id="download-btn" href="#" download class="bg-blue-600 text-white px-8 py-3 rounded-full font-bold shadow-lg">💾 保存到相册</a>
-        </div>
+        <div class="text-center mt-6"><h3 id="player-title" class="text-xl font-mono text-white mb-4"></h3><a id="download-btn" href="#" download class="bg-blue-600 text-white px-8 py-3 rounded-full font-bold">💾 保存</a></div>
     </div>
 
     <script>
-        // --- 1. 配置参数 ---
+        // --- 日志系统 ---
+        function log(msg, type='info') {
+            const el = document.getElementById('debug-content');
+            const div = document.createElement('div');
+            const time = new Date().toLocaleTimeString().split(' ')[0];
+            div.innerHTML = `<span class="text-gray-500">[${time}]</span> ${msg}`;
+            if(type==='error') div.className = "text-red-400 font-bold border-l-2 border-red-500 pl-2";
+            if(type==='warn') div.className = "text-yellow-400";
+            if(type==='success') div.className = "text-green-400";
+            el.appendChild(div);
+            // 自动滚动到底部
+            const container = document.getElementById('debug-console');
+            if(container.classList.contains('hidden') === false) container.scrollTop = container.scrollHeight;
+            console.log(msg); // 同时也打到原生控制台
+        }
+        function toggleDebug() { document.getElementById('debug-console').classList.toggle('hidden'); }
+        function clearLogs() { document.getElementById('debug-content').innerHTML = ''; }
+        
+        window.onerror = function(msg, url, line) {
+            log(`系统错误: ${msg} (Line:${line})`, 'error');
+            return false;
+        };
+
+        // --- 配置 ---
         const DB_NAME = 'PipelineDB';
         const DUPLICATE_INTERVAL_MS = 1500; 
         const BITRATE = 25000000; 
-        
-        // 核心：检测是否为 iOS 设备
         const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         
-        // 格式锁定：针对快递单优化
         const SUPPORTED_FORMATS = [
             Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.EAN_13,
             Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.CODE_39,
@@ -133,105 +154,138 @@
         let currentCode = null, lastCodeTime = 0;
         let stream = null, videoTrack = null, trackCapabilities = {};
 
-        // 兼容 iOS 的音效
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        const audioCtx = new AudioContext();
+        // 音效
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         function beep(f=1200,d=80){if(audioCtx.state==='suspended')audioCtx.resume();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='square';o.frequency.value=f;o.connect(g);g.connect(audioCtx.destination);o.start();setTimeout(()=>o.stop(),d);}
         function errorBeep(){const n=audioCtx.currentTime,o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sawtooth';o.frequency.value=150;o.connect(g);g.connect(audioCtx.destination);o.start(n);o.stop(n+0.4);}
 
-        const initDB=()=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=e=>{db=e.target.result;if(!db.objectStoreNames.contains('videos')){const s=db.createObjectStore('videos',{keyPath:'id',autoIncrement:true});s.createIndex('barcode','barcode',{unique:false});s.createIndex('created','created',{unique:false});}};r.onsuccess=e=>{db=e.target.result;updateStorageInfo();};};
-        const checkDuplicate=(c)=>new Promise(r=>{if(!db)return r(!1);const q=db.transaction(['videos'],'readonly').objectStore('videos').index('barcode').getKey(c);q.onsuccess=()=>r(!!q.result);q.onerror=()=>r(!1);});
-        const saveVideo=(b,blob)=>{if(!b||!blob||blob.size===0)return;db.transaction(['videos'],'readwrite').objectStore('videos').add({barcode:b,blob:blob,created:Date.now(),size:blob.size}).onsuccess=()=>{showToast(`✅ ${b} 已归档`);updateStorageInfo();};};
-
-        function checkSecureContext() {
-            if (!window.isSecureContext) {
-                document.getElementById('https-warning').classList.remove('hidden');
-                document.getElementById('main-btn').innerText = "❌ 需 HTTPS 环境";
-                document.getElementById('main-btn').classList.replace('bg-blue-600', 'bg-gray-600');
-                return false;
-            }
-            return true;
-        }
+        const initDB=()=>{
+            log("正在连接数据库...");
+            const r=indexedDB.open(DB_NAME,1);
+            r.onupgradeneeded=e=>{db=e.target.result;if(!db.objectStoreNames.contains('videos')){db.createObjectStore('videos',{keyPath:'id',autoIncrement:true}).createIndex('barcode','barcode');}};
+            r.onsuccess=e=>{db=e.target.result; log("数据库连接成功", 'success'); updateStorageInfo();};
+            r.onerror=e=>{log("数据库错误: "+e.target.error, 'error');};
+        };
+        const checkDuplicate=(c)=>new Promise(r=>{if(!db)return r(!1);db.transaction(['videos'],'readonly').objectStore('videos').index('barcode').getKey(c).onsuccess=e=>r(!!e.target.result);});
+        const saveVideo=(b,blob)=>{
+            if(!b||!blob||blob.size===0)return;
+            log(`正在保存视频: ${b} (${(blob.size/1024).toFixed(1)}KB)`);
+            db.transaction(['videos'],'readwrite').objectStore('videos').add({barcode:b,blob:blob,created:Date.now(),size:blob.size}).onsuccess=()=>{showToast(`✅ ${b} 已归档`);updateStorageInfo();log("保存成功", 'success');};
+        };
 
         async function startPipeline() {
             if (isRunning) { stopPipeline(); return; }
-            if (!checkSecureContext()) return;
+            log("--- 开始启动流程 ---");
+            log(`设备类型: ${isIOS ? 'iOS' : 'Android/PC'}`);
 
             try {
                 if (!html5QrCode) html5QrCode = new Html5Qrcode("scanner-container");
 
-                // 🎥 iOS 专用配置优化
-                // 1. Android 使用硬件加速(快)，iOS 禁用硬件加速(稳)
-                // 2. iOS 必须使用 Zxing-js 软解，否则部分版本 Safari 会死锁
-                const useNative = !isIOS; 
+                // iOS 兼容性配置：降低分辨率以提高检测率
+                const widthIdeal = isIOS ? 1280 : 1920; 
+                const heightIdeal = isIOS ? 720 : 1080;
                 
-                // 3. 约束条件：iOS 上尽量不设 min/max，只设 ideal，兼容性更好
                 const constraints = { 
                     facingMode: "environment", 
                     focusMode: "continuous", 
-                    width: { ideal: 1920 }, 
-                    height: { ideal: 1080 } 
+                    width: { ideal: widthIdeal }, 
+                    height: { ideal: heightIdeal } 
                 };
                 
+                log(`请求分辨率: ${widthIdeal}x${heightIdeal}`);
+
                 const config = { 
                     fps: 30, 
-                    qrbox: { width: 350, height: 150 }, // 扁平扫描框，适合条码
+                    qrbox: { width: 300, height: 150 }, 
                     aspectRatio: 1.0, 
                     formatsToSupport: SUPPORTED_FORMATS, 
-                    useBarCodeDetectorIfSupported: useNative, // 关键：iOS 设为 false
-                    videoConstraints: constraints 
+                    useBarCodeDetectorIfSupported: !isIOS, // iOS 必须禁用原生检测
+                    videoConstraints: constraints,
+                    disableFlip: false 
                 };
 
-                // 更新 UI 状态
-                if(isIOS) document.getElementById('sys-badge').innerText = "iOS MODE";
-
-                await html5QrCode.start(constraints, config, handleBarcode, () => {});
-
+                // 启动回调
+                const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+                    handleBarcode(decodedText);
+                };
+                
+                // 启动
+                log("正在启动摄像头...");
+                await html5QrCode.start(constraints, config, qrCodeSuccessCallback, (errMsg) => {
+                    // 这里是扫描中的实时错误，通常忽略，但为了调试我们抽样打印
+                    // log("Scanning...", 'warn'); 
+                });
+                
+                log("摄像头启动成功!", 'success');
+                
+                // 获取实际流状态
                 const videoElement = document.querySelector("#scanner-container video");
-                stream = videoElement.srcObject;
-                videoTrack = stream.getVideoTracks()[0];
-                trackCapabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-
-                // 🔎 变焦逻辑优化
-                const slider = document.getElementById('zoom-slider');
-                if (trackCapabilities.zoom) {
-                    slider.min = trackCapabilities.zoom.min; 
-                    slider.max = trackCapabilities.zoom.max; 
-                    slider.step = trackCapabilities.zoom.step || 0.1;
+                if(videoElement) {
+                    stream = videoElement.srcObject;
+                    videoTrack = stream.getVideoTracks()[0];
+                    const settings = videoTrack.getSettings();
+                    log(`实际分辨率: ${settings.width}x${settings.height}`);
                     
-                    // 核心修复：iPhone 主摄最近对焦距离远，默认拉大变焦
-                    // iOS 默认 2.0x，Android 默认 1.2x
-                    let targetZoom = isIOS ? 2.0 : 1.2;
-                    targetZoom = Math.min(slider.max, targetZoom); // 防止超出硬件最大值
+                    trackCapabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+                    log(`支持变焦: ${!!trackCapabilities.zoom}, 支持手电: ${!!trackCapabilities.torch}`);
                     
-                    slider.value = targetZoom; 
-                    slider.disabled = false;
-                    applyZoom(targetZoom);
-                } else {
-                    slider.disabled = true;
+                    // 变焦
+                    const slider = document.getElementById('zoom-slider');
+                    if (trackCapabilities.zoom) {
+                        slider.min = trackCapabilities.zoom.min; slider.max = trackCapabilities.zoom.max; slider.step = 0.1;
+                        let z = isIOS ? 2.0 : 1.2;
+                        z = Math.min(slider.max, z);
+                        slider.value = z; slider.disabled = false;
+                        applyZoom(z);
+                        log(`应用初始变焦: ${z}x`);
+                    } else {
+                        slider.disabled = true;
+                        log("当前摄像头不支持变焦", 'warn');
+                    }
+                    
+                    document.getElementById('torch-btn').disabled = !trackCapabilities.torch;
                 }
-                
-                document.getElementById('torch-btn').disabled = !trackCapabilities.torch;
-                
+
                 isRunning = true; updateUIState(true);
 
             } catch (err) {
-                alert("启动失败: " + err.message + "\niOS用户请检查：\n1. 是否使用了HTTPS\n2. 是否允许了相机权限");
+                log(`启动崩溃: ${err.message}`, 'error');
+                alert("启动失败，请查看调试日志");
                 stopPipeline();
             }
         }
 
         async function stopPipeline() {
+            log("正在停止...");
             stopRecording(true);
-            try { await html5QrCode.stop(); } catch(e){}
+            try { await html5QrCode.stop(); log("扫描器已停止"); } catch(e){ log("停止扫描器失败:"+e, 'warn'); }
             isRunning = false; updateUIState(false);
         }
 
-        async function applyZoom(val) { if(videoTrack&&trackCapabilities.zoom) try{await videoTrack.applyConstraints({advanced:[{zoom:parseFloat(val)}]});}catch(e){} }
+        async function applyZoom(val) { 
+            if(videoTrack&&trackCapabilities.zoom) {
+                try { 
+                    await videoTrack.applyConstraints({advanced:[{zoom:parseFloat(val)}]}); 
+                } catch(e) { log("变焦失败:"+e, 'warn'); }
+            }
+        }
+
         let torchOn = false;
-        async function toggleTorch() { if(videoTrack&&trackCapabilities.torch) { torchOn=!torchOn; try{await videoTrack.applyConstraints({advanced:[{torch:torchOn}]});document.getElementById('torch-btn').classList.toggle('bg-yellow-500',torchOn);}catch(e){} } }
+        async function toggleTorch() { 
+            if(videoTrack&&trackCapabilities.torch) { 
+                torchOn=!torchOn; 
+                try { 
+                    await videoTrack.applyConstraints({advanced:[{torch:torchOn}]}); 
+                    document.getElementById('torch-btn').classList.toggle('bg-yellow-500',torchOn);
+                    log(`手电筒: ${torchOn}`);
+                } catch(e){ log("手电筒失败:"+e, 'error'); } 
+            } else {
+                log("不支持手电筒", 'warn');
+            }
+        }
 
         async function handleBarcode(code) {
+            log(`识别到: ${code}`, 'success');
             const now = Date.now();
             if (code === currentCode && (now - lastCodeTime < DUPLICATE_INTERVAL_MS)) return;
             if (code !== currentCode) {
@@ -254,26 +308,26 @@
         }
 
         function startRecording() {
-            if (!stream) return;
+            if (!stream) { log("录制失败: 无视频流", 'error'); return; }
             recordedChunks = [];
             let options = { mimeType: 'video/mp4', videoBitsPerSecond: BITRATE }; 
-            // iOS Safari 通常支持 video/mp4 (H.264)，但最好有降级方案
             if (!MediaRecorder.isTypeSupported('video/mp4')) options = { mimeType: 'video/webm', videoBitsPerSecond: BITRATE };
             
             try { mediaRecorder = new MediaRecorder(stream, options); } catch (e) { 
-                console.warn("High bitrate failed, trying default", e);
-                mediaRecorder = new MediaRecorder(stream); // 降级启动
+                log("高清录制失败，降级尝试", 'warn');
+                mediaRecorder = new MediaRecorder(stream); 
             }
             mediaRecorder.ondataavailable = e => { if(e.data.size > 0) recordedChunks.push(e.data); };
             
             let clipCode = currentCode;
             mediaRecorder.onstop = () => {
-                // iOS 录制出的 blob 类型有时需要强制指定
+                log(`录制结束: ${clipCode}`);
                 const finalType = recordedChunks[0] ? recordedChunks[0].type : options.mimeType;
                 saveVideo(clipCode, new Blob(recordedChunks, { type: finalType }));
             };
             mediaRecorder.start();
             isRecording = true; 
+            log(`开始录制: ${currentCode}`);
             document.getElementById('rec-badge').classList.remove('hidden'); 
             document.getElementById('scanner-container').classList.add('recording-border');
         }
@@ -295,7 +349,7 @@
                 btn.className = "w-full bg-red-600 text-white py-4 rounded-xl font-bold text-xl shadow-lg animate-pulse"; 
                 line.classList.remove('hidden'); 
             } else { 
-                btn.innerText = isIOS ? "📸 启动 iOS 扫描" : "📸 启动极速扫描"; 
+                btn.innerText = "📸 启动扫描"; 
                 btn.className = "w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-xl shadow-lg"; 
                 line.classList.add('hidden'); 
             }
@@ -309,8 +363,6 @@
         }
 
         async function updateStorageInfo() { try { const { usage } = await navigator.storage.estimate(); document.getElementById('storage-info').innerText = `已用: ${(usage/1024/1024).toFixed(0)} MB`; } catch(e){} }
-        
-        // 历史与播放
         function showHistory() { document.getElementById('history-modal').classList.remove('hidden'); doSearch(); }
         function closeHistory() { document.getElementById('history-modal').classList.add('hidden'); }
         function openPlayer(blob, title) {
@@ -334,7 +386,7 @@
         function clearOldData() { if(!confirm("删除30天前的数据？")) return; const m = Date.now()-(30*24*60*60*1000), tx=db.transaction(['videos'],'readwrite'); tx.objectStore('videos').index('created').getAllKeys(IDBKeyRange.upperBound(m)).onsuccess=e=>{const k=e.target.result;if(!k.length)return alert("无旧数据");k.forEach(key=>tx.objectStore('videos').delete(key));tx.oncomplete=()=>{alert(`清理了 ${k.length} 条`);doSearch();updateStorageInfo();};}; }
         function clearAllData() { if(!confirm("⚠️ 确定清空所有？")) return; if(db) db.close(); indexedDB.deleteDatabase(DB_NAME).onsuccess=()=>{alert("已清空");location.reload();}; }
 
-        window.onload = () => { initDB(); checkSecureContext(); };
+        window.onload = () => { initDB(); };
     </script>
 </body>
 </html>
