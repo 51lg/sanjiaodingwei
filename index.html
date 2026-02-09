@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>📦 极速存证终端</title>
+    <!-- 引入 Tailwind CSS (UI美化) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 html5-qrcode (扫码核心) -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+        /* 黑色沉浸式背景，防止反光 */
+        body { background-color: #000; color: white; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+        .hidden { display: none !important; }
+        
+        /* 扫描取景框：高度适中，保留操作区 */
+        #scanner-container { 
+            width: 100%; height: 55vh; background: #000; border-radius: 12px; overflow: hidden; border: 2px solid #333; 
+            position: relative;
+        }
+        /* 强制视频填满容器 */
+        #scanner-container video { object-fit: cover !important; width: 100% !important; height: 100% !important; }
+
+        /* 适配 iPhone 底部横条 */
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+        
+        /* 录像时的红框呼吸效果 */
+        .recording-border { box-shadow: inset 0 0 0 6px red; animation: pulse-red 2s infinite; }
+        @keyframes pulse-red { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+
+        /* 激光扫描线动画 */
+        .scan-line {
+            position: absolute; width: 100%; height: 3px; background: #ef4444; top: 0;
+            animation: scan 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite; 
+            box-shadow: 0 0 15px #ef4444, 0 0 30px #ef4444; opacity: 0.9; z-index: 20;
+        }
+        @keyframes scan { 0% { top: 10%; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: 90%; opacity: 0; } }
+
+        /* 自定义变焦滑杆样式 */
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 24px; width: 24px; border-radius: 50%; background: #3b82f6; cursor: pointer; margin-top: -10px; box-shadow: 0 0 10px rgba(59,130,246,0.5); border: 2px solid white;
+        }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #4b5563; border-radius: 2px; }
+    </style>
+</head>
+<body class="p-4 flex flex-col h-screen pb-safe">
+
+    <!-- 顶部状态栏 -->
+    <div class="flex justify-between items-center mb-2">
+        <div>
+            <h1 class="text-lg font-bold text-white flex items-center gap-2">
+                🚀 存证终端
+                <span class="text-[10px] bg-green-600 px-1 rounded font-mono">ONLINE</span>
+            </h1>
+        </div>
+        <div class="flex gap-2">
+             <!-- 手电筒按钮 -->
+             <button onclick="toggleTorch()" id="torch-btn" class="bg-gray-800 p-2 rounded-full border border-gray-600 active:bg-yellow-600 disabled:opacity-50 transition-colors">🔦</button>
+        </div>
+    </div>
+
+    <!-- HTTPS 警告 (如果是 HTTP 访问会显示) -->
+    <div id="https-warning" class="hidden bg-red-900/80 border border-red-500 text-white p-4 rounded-lg mb-4 text-sm animate-pulse">
+        <p class="font-bold text-lg mb-1">⚠️ 安全限制警告</p>
+        <p>当前不是 HTTPS 环境，摄像头可能无法启动。</p>
+        <p class="mt-2 font-bold text-yellow-300">请直接将代码部署到 GitHub Pages 即可解决此问题。</p>
+    </div>
+
+    <!-- 主扫描/录像窗口 -->
+    <div id="scanner-wrapper" class="relative shadow-2xl rounded-xl overflow-hidden bg-gray-900">
+        <div id="scanner-container"></div>
+
+        <!-- 状态浮层 -->
+        <div class="absolute top-4 left-4 bg-black/60 backdrop-blur px-3 py-1 rounded border border-white/20 z-10">
+            <p class="text-[10px] text-gray-400 uppercase">当前录制</p>
+            <p class="text-xl font-mono text-green-400 font-bold tracking-wider" id="current-barcode">READY</p>
+        </div>
+        <div class="absolute top-4 right-4 bg-red-600 text-white px-2 py-1 rounded text-xs font-bold hidden z-10 animate-pulse" id="rec-badge">● REC</div>
+        <div id="scan-line-el" class="scan-line hidden"></div>
+        
+        <!-- 居中提示框 -->
+        <div id="toast" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full text-center pointer-events-none opacity-0 transition-opacity duration-200 z-50 px-4">
+            <span class="bg-black/90 text-white px-6 py-4 rounded-xl text-xl font-bold shadow-2xl border border-gray-500 backdrop-blur-md block" id="toast-text"></span>
+        </div>
+    </div>
+
+    <!-- 变焦控制条 (如果摄像头支持) -->
+    <div class="mt-4 mb-2 bg-gray-900 p-3 rounded-lg border border-gray-800 flex items-center gap-3">
+        <span class="text-xs text-gray-400">1x</span>
+        <input type="range" id="zoom-slider" min="1" max="5" step="0.1" value="1" disabled oninput="applyZoom(this.value)">
+        <span class="text-xs text-gray-400">5x</span>
+    </div>
+
+    <!-- 底部操作区 -->
+    <div class="flex-1 flex flex-col justify-end gap-3">
+        <button onclick="startPipeline()" id="main-btn" class="w-full bg-blue-600 hover:bg-blue-500 text-white py-4 rounded-xl font-bold text-xl shadow-lg transition-all border border-blue-400/30 active:scale-95">
+            📸 启动极速扫描
+        </button>
+        
+        <div class="flex justify-between items-center px-1">
+            <div class="flex gap-4">
+                <a href="#" onclick="showHistory()" class="text-sm text-gray-400 hover:text-white">📂 历史记录</a>
+                <a href="#" onclick="manualTriggerDialog()" class="text-sm text-gray-400 hover:text-white">⌨️ 手动输单</a>
+            </div>
+            <span id="storage-info" class="text-[10px] text-gray-600 font-mono">存储: 计算中...</span>
+        </div>
+    </div>
+
+    <!-- 历史记录全屏弹窗 -->
+    <div id="history-modal" class="fixed inset-0 bg-black/95 z-50 hidden flex flex-col p-4 animate-fade-in">
+        <div class="flex justify-between items-center mb-4 border-b border-gray-800 pb-2">
+            <h2 class="text-xl font-bold text-white">📜 历史记录</h2>
+            <button onclick="closeHistory()" class="text-3xl text-gray-400 hover:text-white">&times;</button>
+        </div>
+        <input id="search-input" class="bg-gray-800 p-3 rounded-lg text-white border border-gray-700 w-full mb-4 outline-none focus:border-blue-500" placeholder="🔍 输入单号搜索..." oninput="doSearch()">
+        <div id="video-list" class="flex-1 overflow-y-auto space-y-2 pb-4"></div>
+        <div class="mt-2 pt-2 border-t border-gray-800 flex gap-2">
+             <button onclick="clearOldData()" class="flex-1 bg-yellow-900/30 text-yellow-500 text-xs py-3 rounded-lg border border-yellow-800">🧹 清理30天前</button>
+             <button onclick="clearAllData()" class="flex-1 bg-red-900/30 text-red-500 text-xs py-3 rounded-lg border border-red-800">🗑️ 强制清空</button>
+        </div>
+    </div>
+
+    <!-- 视频播放器弹窗 -->
+    <div id="player-modal" class="fixed inset-0 bg-black z-[60] hidden flex flex-col justify-center bg-opacity-95">
+        <button onclick="closePlayer()" class="absolute top-6 right-6 text-white text-3xl z-20 bg-gray-800 rounded-full w-12 h-12 flex items-center justify-center">&times;</button>
+        <video id="main-player" controls playsinline class="w-full max-h-[80vh] bg-black"></video>
+        <div class="text-center mt-6">
+            <h3 id="player-title" class="text-xl font-mono font-bold text-white mb-4"></h3>
+            <a id="download-btn" href="#" download class="bg-blue-600 text-white px-8 py-3 rounded-full font-bold shadow-lg">💾 保存到相册</a>
+        </div>
+    </div>
+
+    <script>
+        // --- 1. 配置参数 ---
+        const DB_NAME = 'PipelineDB';
+        const DUPLICATE_INTERVAL_MS = 1500; // 连扫冷却时间
+        const BITRATE = 25000000; // 25Mbps 高码率录制
+        
+        // 仅开启常用一维码，提升识别速度
+        const SUPPORTED_FORMATS = [
+            Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.EAN_13,
+            Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.CODE_39,
+            Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.ITF
+        ];
+
+        // --- 全局变量 ---
+        let db, html5QrCode, mediaRecorder;
+        let recordedChunks = [], isRunning = false, isRecording = false;
+        let currentCode = null, lastCodeTime = 0;
+        let stream = null, videoTrack = null, trackCapabilities = {};
+
+        // 音效引擎
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function beep(f=1200,d=80){if(audioCtx.state==='suspended')audioCtx.resume();const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='square';o.frequency.value=f;o.connect(g);g.connect(audioCtx.destination);o.start();setTimeout(()=>o.stop(),d);}
+        function errorBeep(){const n=audioCtx.currentTime,o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sawtooth';o.frequency.value=150;o.connect(g);g.connect(audioCtx.destination);o.start(n);o.stop(n+0.4);}
+
+        // --- 2. 数据库操作 ---
+        const initDB=()=>{const r=indexedDB.open(DB_NAME,1);r.onupgradeneeded=e=>{db=e.target.result;if(!db.objectStoreNames.contains('videos')){const s=db.createObjectStore('videos',{keyPath:'id',autoIncrement:true});s.createIndex('barcode','barcode',{unique:false});s.createIndex('created','created',{unique:false});}};r.onsuccess=e=>{db=e.target.result;updateStorageInfo();};};
+        const checkDuplicate=(c)=>new Promise(r=>{if(!db)return r(!1);const q=db.transaction(['videos'],'readonly').objectStore('videos').index('barcode').getKey(c);q.onsuccess=()=>r(!!q.result);q.onerror=()=>r(!1);});
+        const saveVideo=(b,blob)=>{if(!b||!blob||blob.size===0)return;db.transaction(['videos'],'readwrite').objectStore('videos').add({barcode:b,blob:blob,created:Date.now(),size:blob.size}).onsuccess=()=>{showToast(`✅ ${b} 已归档`);updateStorageInfo();};};
+
+        // --- 3. 核心业务逻辑 ---
+
+        // 安全检查
+        function checkSecureContext() {
+            if (!window.isSecureContext) {
+                document.getElementById('https-warning').classList.remove('hidden');
+                document.getElementById('main-btn').innerText = "❌ 环境不安全 (需HTTPS)";
+                document.getElementById('main-btn').classList.replace('bg-blue-600', 'bg-gray-600');
+                return false;
+            }
+            return true;
+        }
+
+        async function startPipeline() {
+            if (isRunning) { stopPipeline(); return; }
+            if (!checkSecureContext()) return; // 再次检查
+
+            try {
+                if (!html5QrCode) html5QrCode = new Html5Qrcode("scanner-container");
+
+                // 智能配置：1080P + 原生检测 + 自动对焦
+                const constraints = { 
+                    facingMode: "environment", 
+                    focusMode: "continuous", 
+                    width: { ideal: 1920 }, 
+                    height: { ideal: 1080 } 
+                };
+                
+                const config = { 
+                    fps: 30, 
+                    qrbox: { width: 350, height: 150 }, 
+                    aspectRatio: 1.0, 
+                    formatsToSupport: SUPPORTED_FORMATS, 
+                    useBarCodeDetectorIfSupported: true, // 启用硬件加速
+                    videoConstraints: constraints 
+                };
+
+                await html5QrCode.start(constraints, config, handleBarcode, () => {});
+
+                // 获取硬件能力 (变焦/手电筒)
+                const videoElement = document.querySelector("#scanner-container video");
+                stream = videoElement.srcObject;
+                videoTrack = stream.getVideoTracks()[0];
+                trackCapabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+
+                // 初始化变焦滑杆
+                const slider = document.getElementById('zoom-slider');
+                if (trackCapabilities.zoom) {
+                    slider.min = trackCapabilities.zoom.min; 
+                    slider.max = trackCapabilities.zoom.max; 
+                    slider.step = trackCapabilities.zoom.step || 0.1;
+                    // 默认开启 1.2x 微变焦，扫码更灵敏
+                    const defaultZoom = Math.min(slider.max, 1.2);
+                    slider.value = defaultZoom; 
+                    slider.disabled = false;
+                    applyZoom(defaultZoom);
+                } else slider.disabled = true;
+                
+                // 初始化手电筒
+                document.getElementById('torch-btn').disabled = !trackCapabilities.torch;
+                
+                isRunning = true; updateUIState(true);
+
+            } catch (err) {
+                alert("启动失败: " + err.message + "\n请检查摄像头权限。");
+                stopPipeline();
+            }
+        }
+
+        async function stopPipeline() {
+            stopRecording(true);
+            try { await html5QrCode.stop(); } catch(e){}
+            isRunning = false; updateUIState(false);
+        }
+
+        // 硬件控制
+        async function applyZoom(val) { if(videoTrack&&trackCapabilities.zoom) try{await videoTrack.applyConstraints({advanced:[{zoom:parseFloat(val)}]});}catch(e){} }
+        let torchOn = false;
+        async function toggleTorch() { if(videoTrack&&trackCapabilities.torch) { torchOn=!torchOn; try{await videoTrack.applyConstraints({advanced:[{torch:torchOn}]});document.getElementById('torch-btn').classList.toggle('bg-yellow-500',torchOn);}catch(e){} } }
+
+        // 扫码回调
+        async function handleBarcode(code) {
+            const now = Date.now();
+            if (code === currentCode && (now - lastCodeTime < DUPLICATE_INTERVAL_MS)) return;
+            
+            // 查重
+            if (code !== currentCode) {
+                if (await checkDuplicate(code)) {
+                    if (now - lastCodeTime < DUPLICATE_INTERVAL_MS) return;
+                    errorBeep(); showToast(`⚠️ 重复: ${code}`, true); lastCodeTime = now; return;
+                }
+            }
+            lastCodeTime = now; triggerSlice(code);
+        }
+
+        // 切片逻辑
+        function triggerSlice(newCode) {
+            beep(1200, 80); // 成功提示音
+            // UI 反馈
+            const el = document.getElementById('current-barcode');
+            el.innerText = newCode; 
+            el.className = "text-2xl font-mono text-white font-bold tracking-widest scale-110 transition-transform";
+            setTimeout(()=> el.className = "text-xl font-mono text-green-400 font-bold tracking-wider", 200);
+
+            if (isRecording) stopRecording();
+            currentCode = newCode; startRecording();
+        }
+
+        // 录制逻辑
+        function startRecording() {
+            if (!stream) return;
+            recordedChunks = [];
+            let options = { mimeType: 'video/mp4', videoBitsPerSecond: BITRATE }; 
+            if (!MediaRecorder.isTypeSupported('video/mp4')) options = { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: BITRATE };
+            
+            try { mediaRecorder = new MediaRecorder(stream, options); } catch (e) { mediaRecorder = new MediaRecorder(stream); }
+            mediaRecorder.ondataavailable = e => { if(e.data.size > 0) recordedChunks.push(e.data); };
+            
+            let clipCode = currentCode;
+            mediaRecorder.onstop = () => saveVideo(clipCode, new Blob(recordedChunks, { type: options.mimeType }));
+            mediaRecorder.start();
+            isRecording = true; 
+            document.getElementById('rec-badge').classList.remove('hidden'); 
+            document.getElementById('scanner-container').classList.add('recording-border');
+        }
+
+        function stopRecording(force = false) {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+            isRecording = false; 
+            document.getElementById('rec-badge').classList.add('hidden'); 
+            document.getElementById('scanner-container').classList.remove('recording-border');
+            if(force) document.getElementById('current-barcode').innerText = "PAUSED";
+        }
+
+        // 手动输单
+        function manualTriggerDialog() { const c = prompt("输入单号:"); if(c&&c.trim()) handleBarcode(c.trim()); }
+
+        // UI 更新
+        function updateUIState(running) {
+            const btn = document.getElementById('main-btn'), line = document.getElementById('scan-line-el');
+            if (running) { 
+                btn.innerText = "⏹ 停止"; 
+                btn.className = "w-full bg-red-600 text-white py-4 rounded-xl font-bold text-xl shadow-lg animate-pulse"; 
+                line.classList.remove('hidden'); 
+            } else { 
+                btn.innerText = "📸 启动极速扫描"; 
+                btn.className = "w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-xl shadow-lg"; 
+                line.classList.add('hidden'); 
+            }
+        }
+
+        function showToast(msg, isErr) {
+            const t = document.getElementById('toast'), txt = document.getElementById('toast-text');
+            txt.innerText = msg; 
+            txt.className = isErr ? "bg-yellow-500 text-black px-6 py-4 rounded-xl text-xl font-bold shadow-2xl border-4 border-yellow-600 block" : "bg-green-600/90 text-white px-6 py-4 rounded-xl text-xl font-bold shadow-2xl backdrop-blur block";
+            t.classList.remove('opacity-0'); setTimeout(() => t.classList.add('opacity-0'), 1500);
+        }
+
+        async function updateStorageInfo() { try { const { usage } = await navigator.storage.estimate(); document.getElementById('storage-info').innerText = `已用: ${(usage/1024/1024).toFixed(0)} MB`; } catch(e){} }
+
+        // 历史与播放
+        function showHistory() { document.getElementById('history-modal').classList.remove('hidden'); doSearch(); }
+        function closeHistory() { document.getElementById('history-modal').classList.add('hidden'); }
+        function openPlayer(blob, title) {
+            const url = URL.createObjectURL(blob), v = document.getElementById('main-player'); v.src = url; v.play(); document.getElementById('player-title').innerText = title;
+            const d = document.getElementById('download-btn'); d.href = url; d.download = `${title}.mp4`; document.getElementById('player-modal').classList.remove('hidden');
+        }
+        function closePlayer() { document.getElementById('main-player').pause(); document.getElementById('player-modal').classList.add('hidden'); }
+        
+        function doSearch() {
+            const q = document.getElementById('search-input').value.trim(), list = document.getElementById('video-list'); list.innerHTML = ''; let lim = 50;
+            db.transaction(['videos'], 'readonly').objectStore('videos').openCursor(null, 'prev').onsuccess = e => {
+                const c = e.target.result; if(c && lim > 0) {
+                    if(!q || c.value.barcode.includes(q)) {
+                        const i = c.value, d = new Date(i.created), ds = `${d.getMonth()+1}/${d.getDate()} ${d.getHours()}:${d.getMinutes().toString().padStart(2,'0')}`;
+                        const div = document.createElement('div'); div.className = "bg-gray-800 p-3 rounded-lg border-l-4 border-blue-500 mb-2 flex justify-between items-center cursor-pointer active:bg-gray-700";
+                        div.onclick = () => openPlayer(i.blob, i.barcode); div.innerHTML = `<div><div class="font-bold text-lg font-mono">${i.barcode}</div><div class="text-xs text-gray-500">${ds} · ${(i.size/1024/1024).toFixed(1)}MB</div></div><div class="text-2xl text-blue-500">▶</div>`;
+                        list.appendChild(div); lim--;
+                    } c.continue();
+                }
+            };
+        }
+        function clearOldData() { if(!confirm("删除30天前的数据？")) return; const m = Date.now()-(30*24*60*60*1000), tx=db.transaction(['videos'],'readwrite'); tx.objectStore('videos').index('created').getAllKeys(IDBKeyRange.upperBound(m)).onsuccess=e=>{const k=e.target.result;if(!k.length)return alert("无旧数据");k.forEach(key=>tx.objectStore('videos').delete(key));tx.oncomplete=()=>{alert(`清理了 ${k.length} 条`);doSearch();updateStorageInfo();};}; }
+        function clearAllData() { if(!confirm("⚠️ 确定清空所有？")) return; if(db) db.close(); indexedDB.deleteDatabase(DB_NAME).onsuccess=()=>{alert("已清空");location.reload();}; }
+
+        window.onload = () => { initDB(); checkSecureContext(); };
+    </script>
+</body>
+</html>
