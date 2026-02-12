@@ -53,6 +53,18 @@
             font-size: 12px; color: #666; background: #e9ecef; 
             padding: 8px; border-radius: 4px; line-height: 1.5;
         }
+
+        /* PS风格图层面板 */
+        .layer-panel { border: 1px solid #ddd; border-radius: 4px; display: flex; flex-direction: column; background: #fff; }
+        .layer-header { background: #f1f3f5; padding: 6px 10px; font-size: 12px; font-weight: bold; border-bottom: 1px solid #ddd; color: #495057; }
+        .layer-list { list-style: none; margin: 0; padding: 0; max-height: 140px; overflow-y: auto; }
+        .layer-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 13px; transition: background 0.2s; }
+        .layer-item:hover { background: #f8f9fa; }
+        .layer-item:last-child { border-bottom: none; }
+        .layer-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 10px; }
+        .layer-actions { display: flex; gap: 8px; }
+        .icon-btn { cursor: pointer; border: none; background: none; font-size: 14px; padding: 0; opacity: 0.7; transition: opacity 0.2s; }
+        .icon-btn:hover { opacity: 1; }
     </style>
 </head>
 <body>
@@ -78,6 +90,18 @@
             
             <!-- 定位按钮 -->
             <button class="btn-success" onclick="locateMe()">📍 定位我并画圆</button>
+
+            <!-- 点击画圆开关 -->
+            <button id="clickDrawBtn" class="btn-primary" onclick="toggleClickDraw()" style="background-color: #17a2b8;">👆 允许手点地图画圆: [开启]</button>
+
+            <!-- PS风格图层面板 -->
+            <div class="layer-panel">
+                <div class="layer-header">📚 图层面板 (类似PS)</div>
+                <ul id="layerList" class="layer-list">
+                    <!-- 动态生成图层 -->
+                    <li style="padding: 10px; font-size: 12px; color: #999; text-align: center;">暂无图层，请画圆</li>
+                </ul>
+            </div>
 
             <div class="tip">
                 👆 <strong>操作指南：</strong><br>
@@ -138,8 +162,10 @@
             zoomControl: false // 手机端推荐隐藏默认缩放控件
         });
 
-        // 用于保存所有画出来的圈和标记，方便一键清空
-        var drawnItems = L.featureGroup().addTo(map);
+        // 图层管理状态 (类似PS)
+        var layersData = {};
+        var layerCount = 0;
+        var isClickDrawEnabled = true;
 
         // 2. 加载高德图层
         var gaodeVec = L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
@@ -148,17 +174,92 @@
         var gaodeSat = L.tileLayer('https://webst01.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}', {
             maxZoom: 18, attribution: '高德卫星'
         });
+        
+        // 新增：谷歌卫星混合图层 (lyrs=y 表示卫星图+地名/道路标签)
+        var googleSat = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+            maxZoom: 18,
+            subdomains: ['0', '1', '2', '3'],
+            attribution: '© Google Maps'
+        });
+
         gaodeVec.addTo(map);
 
         var baseMaps = {
             "高德标准图": gaodeVec,
-            "高德卫星图": gaodeSat
+            "高德卫星图": gaodeSat,
+            "谷歌卫星图": googleSat
         };
         L.control.layers(baseMaps, null, {position: 'bottomright'}).addTo(map);
 
 
+        // --- 图层面板 UI 更新逻辑 ---
+        function updateLayerUI() {
+            var list = document.getElementById('layerList');
+            list.innerHTML = '';
+            var keys = Object.keys(layersData).reverse(); // 新图层在最上面
+            
+            if (keys.length === 0) {
+                list.innerHTML = '<li style="padding: 10px; font-size: 12px; color: #999; text-align: center;">暂无图层，请画圆</li>';
+                return;
+            }
+
+            keys.forEach(function(id) {
+                var data = layersData[id];
+                var li = document.createElement('li');
+                li.className = 'layer-item';
+                
+                var nameSpan = document.createElement('span');
+                nameSpan.className = 'layer-name';
+                nameSpan.innerText = data.name;
+                if(!data.visible) {
+                    nameSpan.style.color = '#adb5bd';
+                    nameSpan.style.textDecoration = 'line-through';
+                }
+                
+                var actions = document.createElement('div');
+                actions.className = 'layer-actions';
+                
+                var eyeBtn = document.createElement('button');
+                eyeBtn.className = 'icon-btn';
+                eyeBtn.innerHTML = data.visible ? '👁️' : '🙈';
+                eyeBtn.title = "显示/隐藏图层";
+                eyeBtn.onclick = function() { toggleLayerVisibility(id); };
+                
+                var delBtn = document.createElement('button');
+                delBtn.className = 'icon-btn';
+                delBtn.innerHTML = '🗑️';
+                delBtn.title = "删除此图层";
+                delBtn.onclick = function() { deleteLayer(id); };
+                
+                actions.appendChild(eyeBtn);
+                actions.appendChild(delBtn);
+                li.appendChild(nameSpan);
+                li.appendChild(actions);
+                list.appendChild(li);
+            });
+        }
+
+        function toggleLayerVisibility(id) {
+            var data = layersData[id];
+            if(data.visible) {
+                map.removeLayer(data.group);
+                data.visible = false;
+            } else {
+                map.addLayer(data.group);
+                data.visible = true;
+            }
+            updateLayerUI();
+        }
+
+        function deleteLayer(id) {
+            var data = layersData[id];
+            map.removeLayer(data.group);
+            delete layersData[id];
+            updateLayerUI();
+        }
+
         // --- 核心画圆逻辑 ---
-        function drawCircleAt(latlng) {
+        function drawCircleAt(latlng, sourceName) {
             var r = parseFloat(document.getElementById('radius').value);
             if(isNaN(r) || r <= 0) {
                 r = 3; // 默认3公里
@@ -167,23 +268,50 @@
             
             var radiusInMeters = r * 1000; // 千米转米
 
-            // 添加中心点
-            L.circleMarker(latlng, {
+            // 添加中心点和圆
+            var marker = L.circleMarker(latlng, {
                 radius: 4, color: '#000', fillColor: '#fff', fillOpacity: 1
-            }).addTo(drawnItems);
-
-            // 添加红色范围圈
-            L.circle(latlng, {
+            });
+            var circle = L.circle(latlng, {
                 color: 'red',
                 fillColor: '#f03',
                 fillOpacity: 0.25,
                 radius: radiusInMeters
-            }).addTo(drawnItems);
+            });
+
+            // 组合成一个图层组
+            var layerGroup = L.layerGroup([marker, circle]).addTo(map);
+
+            // 注册到图层面板
+            layerCount++;
+            var layerId = 'layer_' + Date.now();
+            var finalName = sourceName ? sourceName : "未知位置";
+            layersData[layerId] = {
+                group: layerGroup,
+                visible: true,
+                name: `图层${layerCount}: ${finalName} (R:${r}KM)`
+            };
+
+            updateLayerUI();
         }
 
-        // 3. 鼠标/手指点击地图画圆
+        // 3. 手点地图画圆开关
+        function toggleClickDraw() {
+            isClickDrawEnabled = !isClickDrawEnabled;
+            var btn = document.getElementById('clickDrawBtn');
+            if (isClickDrawEnabled) {
+                btn.style.backgroundColor = '#17a2b8';
+                btn.innerText = '👆 允许手点地图画圆: [开启]';
+            } else {
+                btn.style.backgroundColor = '#6c757d';
+                btn.innerText = '👆 允许手点地图画圆: [关闭]';
+            }
+        }
+
         map.on('click', function(e) {
-            drawCircleAt(e.latlng);
+            if (isClickDrawEnabled) {
+                drawCircleAt(e.latlng, "手点地图");
+            }
         });
 
 
@@ -225,7 +353,7 @@
                     var latlng = L.latLng(gcjCoords[1], gcjCoords[0]);
                     
                     map.setView(latlng, 13);
-                    drawCircleAt(latlng);
+                    drawCircleAt(latlng, "我的位置");
                 }, function(error) {
                     btn.innerText = originalText;
                     alert("定位失败，请确保已授予浏览器位置权限。");
@@ -256,8 +384,8 @@
             btn.innerText = "搜索中...";
 
             fetch(url)
-                .then(response => response.json())
-                .then(data => {
+                .键，然后(response => response.json())
+                .键，然后(data => {
                     btn.innerText = originalText;
                     if(data && data.length > 0) {
                         var wgsLat = parseFloat(data[0].lat);
@@ -268,7 +396,7 @@
                         var latlng = L.latLng(gcjCoords[1], gcjCoords[0]);
                         
                         map.setView(latlng, 13);
-                        drawCircleAt(latlng);
+                        drawCircleAt(latlng, kw);
                         
                         // 手机端搜索完毕后自动折叠面板，方便看地图
                         if(window.innerWidth < 600 && isPanelOpen) {
@@ -287,7 +415,12 @@
 
         // --- 清空功能 ---
         function clearAll() {
-            drawnItems.clearLayers();
+            Object.keys(layersData).forEach(function(id) {
+                map.removeLayer(layersData[id].group);
+            });
+            layersData = {};
+            layerCount = 0;
+            updateLayerUI();
         }
 
     </script>
