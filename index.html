@@ -7,9 +7,10 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; padding: 0; font-family: "Microsoft YaHei", sans-serif; overflow: hidden; }
+        * { box-sizing: border-box; } /* 确保所有的宽高计算都包含内边距，防止撑破 */
         #map { height: 100vh; width: 100%; z-index: 1; }
         
-        /* 控制面板 */
+        /* 默认 PC 端控制面板 */
         #controls {
             position: absolute; top: 10px; left: 10px; width: 320px; max-width: calc(100vw - 20px);
             background: rgba(255, 255, 255, 0.95);
@@ -19,7 +20,6 @@
             transition: all 0.3s ease;
         }
         
-        /* 控制面板头部（用于拖拽和折叠） */
         .controls-header {
             display: flex; justify-content: space-between; align-items: center;
             padding: 10px 15px; background: #007bff; color: white;
@@ -28,19 +28,20 @@
         }
         .controls-header.collapsed { border-radius: 8px; }
 
-        /* 控制面板内容区 */
         .controls-content {
             padding: 15px; display: flex; flex-direction: column; gap: 12px;
         }
 
-        .row { display: flex; align-items: center; gap: 8px; }
+        .row { display: flex; align-items: center; gap: 8px; width: 100%; }
         #controls label { font-size: 14px; font-weight: bold; color: #333; white-space: nowrap;}
-        #controls input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 100%; box-sizing: border-box; }
+        #controls input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 100%; }
         
         button {
             padding: 9px; border: none; border-radius: 4px; 
             font-size: 14px; font-weight: bold; color: white; cursor: pointer;
-            transition: opacity 0.2s; white-space: nowrap;
+            transition: opacity 0.2s; 
+            word-wrap: break-word; /* 允许文字换行 */
+            white-space: normal;
         }
         button:hover { opacity: 0.8; }
         button:active { transform: scale(0.98); }
@@ -55,32 +56,53 @@
         }
 
         /* PS风格图层面板 */
-        .layer-panel { border: 1px solid #ddd; border-radius: 4px; display: flex; flex-direction: column; background: #fff; }
+        .layer-panel { border: 1px solid #ddd; border-radius: 4px; display: flex; flex-direction: column; background: #fff; width: 100%; }
         .layer-header { background: #f1f3f5; padding: 6px 10px; font-size: 12px; font-weight: bold; border-bottom: 1px solid #ddd; color: #495057; }
-        .layer-list { list-style: none; margin: 0; padding: 0; max-height: 140px; overflow-y: auto; }
+        .layer-list { list-style: none; margin: 0; padding: 0; max-height: 140px; overflow-y: auto; width: 100%; }
         .layer-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-bottom: 1px solid #eee; font-size: 13px; transition: background 0.2s; }
         .layer-item:hover { background: #f8f9fa; }
         .layer-item:last-child { border-bottom: none; }
-        .layer-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-right: 10px; }
-        .layer-actions { display: flex; gap: 8px; }
+        .layer-name { flex: 1; overflow: hidden; text-overflow: ellipsis; margin-right: 5px; font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+        .layer-actions { display: flex; gap: 8px; flex-shrink: 0; }
         .icon-btn { cursor: pointer; border: none; background: none; font-size: 14px; padding: 0; opacity: 0.7; transition: opacity 0.2s; }
         .icon-btn:hover { opacity: 1; }
 
-        /* 针对手机端的 UI 优化 */
-        @media (max-width: 600px) {
-            .controls-content { padding: 10px; gap: 8px; }
-            .controls-header { padding: 8px 12px; font-size: 14px; }
-            button { padding: 7px; font-size: 13px; }
-            #controls input { padding: 6px; font-size: 13px; }
-            #controls label { font-size: 13px; }
-            .layer-list { max-height: 90px; }
-            .tip { font-size: 11px; padding: 6px; }
+        /* ========================================================
+           智能设备适配：手机专属“迷你” UI (缩小约 50%，严格防溢出)
+           ======================================================== */
+        body.mobile-mode #controls {
+            width: 220px; /* 大幅缩小基础宽度 */
+            max-width: 85vw; /* 严格限制最大不能超过屏幕85% */
+            left: 5vw; /* 居中偏移一点 */
+            top: 5px;
+        }
+        body.mobile-mode .controls-header { padding: 6px 10px; font-size: 12px; }
+        body.mobile-mode .controls-content { padding: 8px; gap: 6px; }
+        body.mobile-mode .row { gap: 4px; }
+        body.mobile-mode #controls label { font-size: 11px; }
+        body.mobile-mode #controls input { padding: 4px; font-size: 12px; }
+        body.mobile-mode button { padding: 5px; font-size: 11px; line-height: 1.2; }
+        body.mobile-mode .tip { font-size: 10px; padding: 5px; line-height: 1.3; margin: 2px 0;}
+        body.mobile-mode .layer-header { font-size: 11px; padding: 4px 6px; }
+        body.mobile-mode .layer-item { padding: 4px 6px; }
+        body.mobile-mode .layer-name { font-size: 11px; }
+        body.mobile-mode .layer-list { max-height: 90px; }
+        body.mobile-mode .icon-btn { font-size: 12px; }
+        
+        /* 针对手机极端小屏的进一步缩放 */
+        @media (max-width: 350px) {
+            body.mobile-mode #controls { width: 92vw; left: 4vw; }
+            body.mobile-mode button { font-size: 10px; padding: 4px; }
         }
 
-        /* 调整地图自带控件的位置（如图层切换），在右上角并往下移 */
+        /* 调整地图自带控件的位置（右侧），同时稍微缩小它 */
         .leaflet-top.leaflet-right {
-            margin-top: 60px; /* 往下移，避开顶部的折叠栏 */
-            z-index: 999;     /* 确保层级在我们的主控制面板之下 */
+            margin-top: 50px; 
+            z-index: 999;     
+        }
+        body.mobile-mode .leaflet-top.leaflet-right {
+            transform: scale(0.85); /* 手机端连同地图控件一起缩小 */
+            transform-origin: top right;
         }
     </style>
 </head>
@@ -95,48 +117,47 @@
             
             <!-- 搜索模块 -->
             <div class="row">
-                <input type="text" id="searchInput" placeholder="搜索省市区或地名...">
-                <button class="btn-primary" onclick="searchLocation()">搜索</button>
+                <input type="text" id="searchInput" placeholder="搜地点...">
+                <button class="btn-primary" onclick="searchLocation()" style="width: 50px; flex-shrink: 0;">搜索</button>
             </div>
 
             <!-- 半径设置 -->
             <div class="row">
-                <label>半径 (KM):</label>
-                <input type="number" id="radius" value="3" step="0.1" placeholder="例如 1.5">
+                <label>半径(KM):</label>
+                <input type="number" id="radius" value="3" step="0.1" placeholder="如 1.5">
             </div>
             
             <!-- 定位按钮 -->
             <button id="locateBtn" class="btn-success" onclick="locateMe()">📍 定位我</button>
 
             <!-- 定位确认区域 (默认隐藏) -->
-            <div id="locationConfirmArea" style="display: none; flex-direction: column; gap: 8px; background: #e2e3e5; padding: 10px; border-radius: 4px;">
-                <div style="font-size: 13px; color: #383d41; text-align: center; font-weight: bold;">已移动到当前位置，是否在此画圆？</div>
-                <div style="display: flex; gap: 10px;">
+            <div id="locationConfirmArea" style="display: none; flex-direction: column; gap: 5px; background: #e2e3e5; padding: 6px; border-radius: 4px;">
+                <div style="font-size: 11px; color: #383d41; text-align: center; font-weight: bold;">在此处画圆？</div>
+                <div style="display: flex; gap: 5px;">
                     <button class="btn-success" onclick="confirmLocation()" style="flex: 1;">✔️ 确定</button>
                     <button class="btn-clear" onclick="cancelLocation()" style="flex: 1; background: #6c757d;">❌ 取消</button>
                 </div>
             </div>
 
             <!-- 点击画圆开关 -->
-            <button id="clickDrawBtn" class="btn-primary" onclick="toggleClickDraw()" style="background-color: #17a2b8;">👆 允许手点地图画圆: [开启]</button>
+            <button id="clickDrawBtn" class="btn-primary" onclick="toggleClickDraw()" style="background-color: #17a2b8;">👆 手点地图画圆: [开]</button>
 
             <!-- PS风格图层面板 -->
             <div class="layer-panel">
-                <div class="layer-header">📚 图层面板 (类似PS)</div>
+                <div class="layer-header">📚 图层面板</div>
                 <ul id="layerList" class="layer-list">
                     <!-- 动态生成图层 -->
-                    <li style="padding: 10px; font-size: 12px; color: #999; text-align: center;">暂无图层，请画圆</li>
+                    <li style="padding: 10px; font-size: 11px; color: #999; text-align: center;">暂无图层</li>
                 </ul>
             </div>
 
             <div class="tip">
-                👆 <strong>操作指南：</strong><br>
-                1. 输入想要画的半径（千米）。<br>
-                2. <strong>直接点击地图</strong>或<strong>搜索位置</strong>进行画圈。<br>
-                3. 右下角可切换卫星地图。
+                1. 输入半径(千米)<br>
+                2. 点击地图或搜索来画圆<br>
+                3. 右侧可切换卫星图
             </div>
 
-            <button class="btn-clear" onclick="clearAll()">🗑️ 清空所有圆圈</button>
+            <button class="btn-clear" onclick="clearAll()">🗑️ 清空所有</button>
         </div>
     </div>
 
@@ -144,7 +165,21 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // --- 坐标转换算法 (WGS84 -> GCJ02) 解决国内地图偏移 ---
+        // --- 智能设备识别 (核心优化) ---
+        function checkDevice() {
+            var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 600;
+            if (isMobile) {
+                document.body.classList.add('mobile-mode');
+            } else {
+                document.body.classList.remove('mobile-mode');
+            }
+        }
+        // 初始化检测，并在窗口大小改变时动态检测
+        checkDevice();
+        window.addEventListener('resize', checkDevice);
+
+
+        // --- 坐标转换算法 (WGS84 -> GCJ02) ---
         const PI = 3.1415926535897932384626;
         const a = 6378245.0;
         const ee = 0.00669342162296594323;
@@ -180,6 +215,24 @@
             return [lng + dlng, lat + dlat];
         }
 
+        // --- 坐标逆向转换算法 (GCJ02 -> WGS84) 用于纠正手点地图的偏移 ---
+        function gcj02towgs84(lng, lat) {
+            if (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271) {
+                return [lng, lat];
+            }
+            let dlat = transformLat(lng - 105.0, lat - 35.0);
+            let dlng = transformLng(lng - 105.0, lat - 35.0);
+            let radlat = lat / 180.0 * PI;
+            let magic = Math.sin(radlat);
+            magic = 1 - ee * magic * magic;
+            let sqrtmagic = Math.sqrt(magic);
+            dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrtmagic) * PI);
+            dlng = (dlng * 180.0) / (a / sqrtmagic * Math.cos(radlat) * PI);
+            let mglat = lat + dlat;
+            let mglng = lng + dlng;
+            return [lng * 2 - mglng, lat * 2 - mglat]; // 近似反算
+        }
+
 
         // 1. 初始化地图
         var map = L.map('map', {
@@ -193,7 +246,11 @@
         var layerCount = 0;
         var isClickDrawEnabled = true;
         var tempLocateMarker = null; // 用于存储定位时的临时标记
-        var tempLocateLatLng = null; // 用于存储定位时的临时坐标
+        
+        // --- 新增：核心坐标系状态管理 ---
+        var currentCoordSystem = 'GCJ02'; // 默认底图是高德(GCJ02)
+        var tempLocateWgsLng = null; // 存储定位的绝对无偏经度
+        var tempLocateWgsLat = null; // 存储定位的绝对无偏纬度
 
         // 2. 加载高德图层
         var gaodeVec = L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
@@ -203,7 +260,7 @@
             maxZoom: 18, attribution: '高德卫星'
         });
         
-        // 新增：谷歌卫星混合图层 (lyrs=y 表示卫星图+地名/道路标签)
+        // 谷歌卫星混合图层 (lyrs=y 表示卫星图+地名/道路标签)
         var googleSat = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
             maxZoom: 18,
             subdomains: ['0', '1', '2', '3'],
@@ -218,8 +275,56 @@
             "谷歌卫星图": googleSat
         };
         
-        // 【修改此处】将图层控件从 bottomright 移动到右上角 (topright)
         L.control.layers(baseMaps, null, {position: 'topright'}).addTo(map);
+
+        // --- 核心优化：监听图层切换，动态修正坐标偏移 ---
+        map.on('baselayerchange', function (e) {
+            var newCoordSystem = (e.name === '谷歌卫星图') ? 'WGS84' : 'GCJ02';
+            
+            if (newCoordSystem !== currentCoordSystem) {
+                // 1. 修正地图中心点视角，让画面保持在同一建筑物上
+                var center = map.getCenter();
+                var newCenter;
+                if (newCoordSystem === 'WGS84') { // 换成谷歌：抹除偏移
+                    var wgs = gcj02towgs84(center.lng, center.lat);
+                    newCenter = L.latLng(wgs[1], wgs[0]);
+                } else { // 换回高德：加上偏移
+                    var gcj = wgs84togcj02(center.lng, center.lat);
+                    newCenter = L.latLng(gcj[1], gcj[0]);
+                }
+                map.setView(newCenter, map.getZoom(), { animate: false });
+                
+                currentCoordSystem = newCoordSystem; // 更新当前系统状态
+                
+                // 2. 修正临时定位图标 (如果此时正在询问"是否在此画圆")
+                if (tempLocateMarker && tempLocateWgsLng) {
+                    var tLatLng;
+                    if (currentCoordSystem === 'GCJ02') {
+                        var tGcj = wgs84togcj02(tempLocateWgsLng, tempLocateWgsLat);
+                        tLatLng = L.latLng(tGcj[1], tGcj[0]);
+                    } else {
+                        tLatLng = L.latLng(tempLocateWgsLat, tempLocateWgsLng);
+                    }
+                    tempLocateMarker.setLatLng(tLatLng);
+                }
+                
+                // 3. 修正所有已经画好的圆圈位置
+                Object.keys(layersData).forEach(function(id) {
+                    var data = layersData[id];
+                    var renderLatlng;
+                    if (currentCoordSystem === 'GCJ02') {
+                        var gcjCoords = wgs84togcj02(data.wgsLng, data.wgsLat);
+                        renderLatlng = L.latLng(gcjCoords[1], gcjCoords[0]);
+                    } else {
+                        renderLatlng = L.latLng(data.wgsLat, data.wgsLng);
+                    }
+                    // 批量更新每个圆和中心点的位置，不闪烁
+                    data.group.eachLayer(function(layer) {
+                        layer.setLatLng(renderLatlng);
+                    });
+                });
+            }
+        });
 
 
         // --- 图层面板 UI 更新逻辑 ---
@@ -229,7 +334,7 @@
             var keys = Object.keys(layersData).reverse(); // 新图层在最上面
             
             if (keys.length === 0) {
-                list.innerHTML = '<li style="padding: 10px; font-size: 12px; color: #999; text-align: center;">暂无图层，请画圆</li>';
+                list.innerHTML = '<li style="padding: 10px; font-size: 11px; color: #999; text-align: center;">暂无图层</li>';
                 return;
             }
 
@@ -241,6 +346,7 @@
                 var nameSpan = document.createElement('span');
                 nameSpan.className = 'layer-name';
                 nameSpan.innerText = data.name;
+                nameSpan.title = data.name; // 长按或鼠标悬浮可看全名
                 if(!data.visible) {
                     nameSpan.style.color = '#adb5bd';
                     nameSpan.style.textDecoration = 'line-through';
@@ -288,8 +394,8 @@
             updateLayerUI();
         }
 
-        // --- 核心画圆逻辑 ---
-        function drawCircleAt(latlng, sourceName) {
+        // --- 核心画圆逻辑 (统一改为接收真实的 WGS84 绝对坐标) ---
+        function createCircleLayer(wgsLng, wgsLat, sourceName) {
             var r = parseFloat(document.getElementById('radius').value);
             if(isNaN(r) || r <= 0) {
                 r = 3; // 默认3公里
@@ -298,11 +404,20 @@
             
             var radiusInMeters = r * 1000; // 千米转米
 
+            // 根据当前正在看哪种底图，来决定“显示在哪里”
+            var renderLatlng;
+            if (currentCoordSystem === 'GCJ02') {
+                var gcj = wgs84togcj02(wgsLng, wgsLat);
+                renderLatlng = L.latLng(gcj[1], gcj[0]);
+            } else {
+                renderLatlng = L.latLng(wgsLat, wgsLng);
+            }
+
             // 添加中心点和圆
-            var marker = L.circleMarker(latlng, {
+            var marker = L.circleMarker(renderLatlng, {
                 radius: 4, color: '#000', fillColor: '#fff', fillOpacity: 1
             });
-            var circle = L.circle(latlng, {
+            var circle = L.circle(renderLatlng, {
                 color: 'red',
                 fillColor: '#f03',
                 fillOpacity: 0.25,
@@ -312,14 +427,16 @@
             // 组合成一个图层组
             var layerGroup = L.layerGroup([marker, circle]).addTo(map);
 
-            // 注册到图层面板
+            // 注册到图层面板，并将真实的 wgs 坐标妥善保存起来！
             layerCount++;
             var layerId = 'layer_' + Date.now();
             var finalName = sourceName ? sourceName : "未知位置";
             layersData[layerId] = {
                 group: layerGroup,
                 visible: true,
-                name: `图层${layerCount}: ${finalName} (R:${r}KM)`
+                name: `L${layerCount}: ${finalName} (${r}KM)`,
+                wgsLng: wgsLng,
+                wgsLat: wgsLat
             };
 
             updateLayerUI();
@@ -331,16 +448,26 @@
             var btn = document.getElementById('clickDrawBtn');
             if (isClickDrawEnabled) {
                 btn.style.backgroundColor = '#17a2b8';
-                btn.innerText = '👆 允许手点地图画圆: [开启]';
+                btn.innerText = '👆 手点地图画圆: [开]';
             } else {
                 btn.style.backgroundColor = '#6c757d';
-                btn.innerText = '👆 允许手点地图画圆: [关闭]';
+                btn.innerText = '👆 手点地图画圆: [关]';
             }
         }
 
         map.on('click', function(e) {
             if (isClickDrawEnabled) {
-                drawCircleAt(e.latlng, "手点地图");
+                // 如果在有偏移的高德地图上点击，需“逆向”算出真实 WGS 坐标保存
+                var wgsLng, wgsLat;
+                if (currentCoordSystem === 'GCJ02') {
+                    var wgs = gcj02towgs84(e.latlng.lng, e.latlng.lat);
+                    wgsLng = wgs[0];
+                    wgsLat = wgs[1];
+                } else {
+                    wgsLng = e.latlng.lng;
+                    wgsLat = e.latlng.lat;
+                }
+                createCircleLayer(wgsLng, wgsLat, "手点地图");
             }
         });
 
@@ -368,7 +495,6 @@
         // --- 定位功能 ---
         function locateMe() {
             if ("geolocation" in navigator) {
-                // 修改按钮状态提示用户
                 const btn = document.getElementById('locateBtn');
                 const originalText = btn.innerText;
                 btn.innerText = "📍 正在定位...";
@@ -378,27 +504,30 @@
                     var wgsLng = position.coords.longitude;
                     var wgsLat = position.coords.latitude;
                     
-                    // WGS84 转换为 高德GCJ02 坐标系
-                    var gcjCoords = wgs84togcj02(wgsLng, wgsLat);
-                    var latlng = L.latLng(gcjCoords[1], gcjCoords[0]);
+                    // 根据当前底图决定临时水滴滴在哪里
+                    var renderLatlng;
+                    if (currentCoordSystem === 'GCJ02') {
+                        var gcjCoords = wgs84togcj02(wgsLng, wgsLat);
+                        renderLatlng = L.latLng(gcjCoords[1], gcjCoords[0]);
+                    } else {
+                        renderLatlng = L.latLng(wgsLat, wgsLng);
+                    }
                     
-                    // 1. 移动并放大到最大层级 (18级通常能清晰看到街道)
-                    map.setView(latlng, 18);
+                    map.setView(renderLatlng, 18);
                     
-                    // 2. 添加一个临时标记点，指示定位位置
                     if(tempLocateMarker) { map.removeLayer(tempLocateMarker); }
-                    tempLocateMarker = L.marker(latlng).addTo(map);
-                    tempLocateLatLng = latlng;
+                    tempLocateMarker = L.marker(renderLatlng).addTo(map);
+                    
+                    // 记录此时的真实坐标备用
+                    tempLocateWgsLng = wgsLng;
+                    tempLocateWgsLat = wgsLat;
 
-                    // 3. 切换面板按钮显示，等待用户确认
                     btn.style.display = 'none';
                     document.getElementById('locationConfirmArea').style.display = 'flex';
                     
-                    // 如果面板是折叠的，自动展开以便用户操作
                     if(!isPanelOpen) {
                         togglePanel();
                     }
-
                 }, function(error) {
                     btn.innerText = originalText;
                     alert("定位失败，请确保已授予浏览器位置权限。");
@@ -414,11 +543,10 @@
 
         // --- 确认定位并画圆 ---
         function confirmLocation() {
-            if(tempLocateLatLng) {
-                drawCircleAt(tempLocateLatLng, "我的位置");
+            if(tempLocateWgsLng && tempLocateWgsLat) {
+                createCircleLayer(tempLocateWgsLng, tempLocateWgsLat, "我的位置");
             }
             resetLocateUI();
-            // 画圆后缩小视角，方便看全貌 (可选，这里设定回缩到13级)
             map.setZoom(13); 
         }
 
@@ -427,13 +555,13 @@
             resetLocateUI();
         }
 
-        // --- 恢复定位UI状态 ---
         function resetLocateUI() {
             if(tempLocateMarker) {
                 map.removeLayer(tempLocateMarker);
                 tempLocateMarker = null;
             }
-            tempLocateLatLng = null;
+            tempLocateWgsLng = null;
+            tempLocateWgsLat = null;
             document.getElementById('locateBtn').style.display = 'block';
             document.getElementById('locationConfirmArea').style.display = 'none';
         }
@@ -447,12 +575,11 @@
                 return;
             }
             
-            // 使用免费的 OpenStreetMap Nominatim 搜索 API
             var url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(kw)}&limit=1`;
             
             const btn = document.querySelector('.btn-primary');
             const originalText = btn.innerText;
-            btn.innerText = "搜索中...";
+            btn.innerText = "中...";
 
             fetch(url)
                 .then(response => response.json())
@@ -462,15 +589,19 @@
                         var wgsLat = parseFloat(data[0].lat);
                         var wgsLng = parseFloat(data[0].lon);
                         
-                        // 转换坐标系
-                        var gcjCoords = wgs84togcj02(wgsLng, wgsLat);
-                        var latlng = L.latLng(gcjCoords[1], gcjCoords[0]);
+                        // 根据当前底图决定画面飞向哪里
+                        var renderLatlng;
+                        if (currentCoordSystem === 'GCJ02') {
+                            var gcjCoords = wgs84togcj02(wgsLng, wgsLat);
+                            renderLatlng = L.latLng(gcjCoords[1], gcjCoords[0]);
+                        } else {
+                            renderLatlng = L.latLng(wgsLat, wgsLng);
+                        }
                         
-                        map.setView(latlng, 13);
-                        drawCircleAt(latlng, kw);
+                        map.setView(renderLatlng, 13);
+                        createCircleLayer(wgsLng, wgsLat, kw);
                         
-                        // 手机端搜索完毕后自动折叠面板，方便看地图
-                        if(window.innerWidth < 600 && isPanelOpen) {
+                        if(document.body.classList.contains('mobile-mode') && isPanelOpen) {
                             togglePanel();
                         }
                     } else {
@@ -482,7 +613,6 @@
                     alert("搜索请求出错，请检查网络。");
                 });
         }
-
 
         // --- 清空功能 ---
         function clearAll() {
