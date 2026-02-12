@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>三圆定位 - 完美修复版</title>
+    <title>三圆定位 - 极简微缩版</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <style>
@@ -11,9 +11,9 @@
         * { box-sizing: border-box; }
         #map { height: 100vh; width: 100%; z-index: 1; }
         
-        /* --- PC端默认样式 --- */
+        /* --- PC端默认样式 (保持舒适) --- */
         #controls {
-            position: absolute; top: 10px; left: 10px; width: 340px; max-width: calc(100vw - 20px);
+            position: absolute; top: 10px; left: 10px; width: 320px; max-width: calc(100vw - 20px);
             background: rgba(255, 255, 255, 0.98);
             border-radius: 8px;
             box-shadow: 0 4px 16px rgba(0,0,0,0.15);
@@ -33,14 +33,11 @@
             padding: 12px; display: flex; flex-direction: column; gap: 10px;
         }
 
-        /* 关键修复：确保 row 不会超出父容器 */
         .row { display: flex; align-items: center; gap: 8px; width: 100%; max-width: 100%; }
         
-        /* 关键修复：min-width: 0 允许 input 在 flex 布局中缩小，防止撑破容器 */
+        /* min-width: 0 防止flex子元素溢出 */
         #controls input { 
-            flex: 1; 
-            min-width: 0; /* 核心修复代码 */
-            padding: 8px; 
+            flex: 1; min-width: 0; padding: 8px; 
             border: 1px solid #ddd; border-radius: 4px; 
             font-size: 13px; outline: none; transition: border 0.2s;
         }
@@ -48,10 +45,11 @@
         #controls label { font-size: 13px; font-weight: bold; color: #555; white-space: nowrap;}
         
         button {
-            padding: 8px 12px; border: none; border-radius: 4px; 
+            padding: 8px; border: none; border-radius: 4px; 
             font-size: 13px; font-weight: bold; color: white; 
             cursor: pointer; transition: opacity 0.2s; 
-            word-wrap: break-word; white-space: normal;
+            white-space: nowrap; /* 防止按钮文字换行 */
+            overflow: hidden; text-overflow: ellipsis;
         }
         button:hover { opacity: 0.9; }
         button:active { transform: scale(0.98); }
@@ -59,11 +57,6 @@
         .btn-primary { background: #007bff; }
         .btn-success { background: #28a745; width: 100%; }
         .btn-clear { background: #dc3545; width: 100%; }
-        
-        .tip { 
-            font-size: 11px; color: #666; background: #f8f9fa; 
-            padding: 8px; border-radius: 4px; line-height: 1.4; border: 1px solid #eee;
-        }
 
         /* 图层面板 */
         .layer-panel { border: 1px solid #eee; border-radius: 4px; display: flex; flex-direction: column; background: #fff; width: 100%; }
@@ -81,18 +74,15 @@
         .icon-btn.delete:hover { color: #dc3545; } 
         .icon-btn.eye:hover { color: #007bff; }
 
-        /* 搜索联想列表 */
-        .search-wrapper { position: relative; flex: 1; min-width: 0; /* 同样防止包裹层撑破 */ }
+        /* 搜索联想 */
+        .search-wrapper { position: relative; flex: 1; min-width: 0; }
         #searchResults {
             position: absolute; top: 100%; left: 0; width: 100%;
             background: white; border: 1px solid #eee; border-top: none;
             border-radius: 0 0 8px 8px; box-shadow: 0 8px 16px rgba(0,0,0,0.1); 
             z-index: 2000; max-height: 250px; overflow-y: auto; display: none;
         }
-        .suggestion-item {
-            display: flex; align-items: center; padding: 8px 10px;
-            cursor: pointer; border-bottom: 1px solid #f5f5f5;
-        }
+        .suggestion-item { display: flex; align-items: center; padding: 8px 10px; cursor: pointer; border-bottom: 1px solid #f5f5f5; }
         .suggestion-item:last-child { border-bottom: none; }
         .suggestion-icon { color: #ccc; font-size: 12px; margin-right: 8px; width: 16px; text-align: center; }
         .suggestion-info { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
@@ -100,35 +90,36 @@
         .suggestion-district { font-size: 10px; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
 
         /* ==========================================================
-           手机端适配 (Mobile Mode)
+           【极简微缩模式】Mobile Mode
            ========================================================== */
         body.mobile-mode #controls {
-            width: 260px; /* 稍微加宽到260px，避免太拥挤 */
-            max-width: 85vw; 
-            left: 10px; top: 10px;
+            width: 190px; /* 宽度大幅缩减至 190px */
+            max-width: 60vw; 
+            left: 5px; top: 5px;
         }
-        body.mobile-mode .controls-header { padding: 8px 10px; font-size: 13px; }
-        body.mobile-mode .controls-content { padding: 10px; gap: 8px; }
-        body.mobile-mode .row { gap: 6px; }
+        body.mobile-mode .controls-header { padding: 6px 8px; font-size: 12px; }
+        body.mobile-mode .controls-content { padding: 8px; gap: 6px; } /* 间距缩小 */
+        body.mobile-mode .row { gap: 4px; }
         
-        body.mobile-mode input { padding: 6px; font-size: 12px; }
-        body.mobile-mode button { padding: 6px 10px; font-size: 12px; }
-        body.mobile-mode label { font-size: 12px; }
+        body.mobile-mode input { padding: 4px; font-size: 11px; }
+        body.mobile-mode button { padding: 5px; font-size: 11px; }
+        body.mobile-mode label { font-size: 11px; }
         
-        body.mobile-mode .suggestion-item { padding: 6px 8px; }
-        body.mobile-mode .suggestion-name { font-size: 12px; }
+        /* 搜索联想微缩 */
+        body.mobile-mode .suggestion-item { padding: 5px; }
+        body.mobile-mode .suggestion-name { font-size: 11px; }
         body.mobile-mode .suggestion-district { font-size: 10px; }
 
-        /* 地图控件位置调整 */
+        /* 地图控件调整 */
         .leaflet-top.leaflet-right { margin-top: 50px; }
-        body.mobile-mode .leaflet-top.leaflet-right { transform: scale(0.8); transform-origin: top right; margin-top: 40px; }
+        body.mobile-mode .leaflet-top.leaflet-right { transform: scale(0.75); transform-origin: top right; margin-top: 35px; }
     </style>
 </head>
 <body>
 
     <div id="controls">
         <div class="controls-header" onclick="togglePanel()" id="panelHeader">
-            <span><i class="fa-solid fa-gear"></i> 控制面板</span>
+            <span><i class="fa-solid fa-gear"></i> 控制台</span>
             <span id="toggleIcon"><i class="fa-solid fa-chevron-down"></i></span>
         </div>
         <div class="controls-content" id="panelContent">
@@ -138,36 +129,32 @@
                     <input type="text" id="searchInput" placeholder="搜地点..." autocomplete="off">
                     <div id="searchResults"></div>
                 </div>
-                <button class="btn-primary" onclick="searchLocation()" style="width: 40px; flex-shrink: 0; padding: 5px;" title="搜索"><i class="fa-solid fa-magnifying-glass"></i></button>
+                <button class="btn-primary" onclick="searchLocation()" style="width: 32px; flex-shrink: 0; padding: 5px;" title="搜索"><i class="fa-solid fa-magnifying-glass"></i></button>
             </div>
 
             <div class="row">
                 <label>半径(KM):</label>
-                <input type="number" id="radius" value="3" step="0.1" placeholder="3.0">
+                <input type="number" id="radius" value="3" step="0.1" placeholder="3">
             </div>
             
-            <button id="locateBtn" class="btn-success" onclick="locateMe()"><i class="fa-solid fa-location-crosshairs"></i> 定位我</button>
+            <div class="row">
+                <button id="locateBtn" class="btn-success" onclick="locateMe()" style="flex: 1;"><i class="fa-solid fa-location-crosshairs"></i> 定位</button>
+                <button id="clickDrawBtn" class="btn-primary" onclick="toggleClickDraw()" style="flex: 1; background-color: #17a2b8;"><i class="fa-solid fa-hand-pointer"></i> 手点:[开]</button>
+            </div>
 
-            <div id="locationConfirmArea" style="display: none; flex-direction: column; gap: 5px; background: #f1f3f5; padding: 6px; border-radius: 4px;">
-                <div style="font-size: 11px; color: #333; text-align: center;">在此画圆？</div>
-                <div style="display: flex; gap: 5px;">
-                    <button class="btn-success" onclick="confirmLocation()" style="flex: 1;"><i class="fa-solid fa-check"></i> 是</button>
-                    <button class="btn-clear" onclick="cancelLocation()" style="flex: 1; background: #6c757d;"><i class="fa-solid fa-xmark"></i> 否</button>
+            <div id="locationConfirmArea" style="display: none; flex-direction: column; gap: 4px; background: #f1f3f5; padding: 4px; border-radius: 4px;">
+                <div style="font-size: 10px; color: #333; text-align: center;">确认画圆?</div>
+                <div style="display: flex; gap: 4px;">
+                    <button class="btn-success" onclick="confirmLocation()" style="flex: 1;">是</button>
+                    <button class="btn-clear" onclick="cancelLocation()" style="flex: 1; background: #6c757d;">否</button>
                 </div>
             </div>
 
-            <button id="clickDrawBtn" class="btn-primary" onclick="toggleClickDraw()" style="background-color: #17a2b8;"><i class="fa-solid fa-hand-pointer"></i> 手点画圆: [开]</button>
-
             <div class="layer-panel">
-                <div class="layer-header"><i class="fa-solid fa-layer-group"></i> 图层列表</div>
-                <ul id="layerList" class="layer-list">
-                    <li style="padding: 10px; font-size: 11px; color: #bbb; text-align: center;">空</li>
+                <div class="layer-header" style="padding: 4px 8px;"><i class="fa-solid fa-layer-group"></i> 列表</div>
+                <ul id="layerList" class="layer-list" style="max-height: 90px;">
+                    <li style="padding: 8px; font-size: 10px; color: #bbb; text-align: center;">空</li>
                 </ul>
-            </div>
-
-            <div class="tip">
-                1. 搜索/点击/定位皆可画圆<br>
-                2. 右上角切换卫星图
             </div>
 
             <button class="btn-clear" onclick="clearAll()"><i class="fa-solid fa-trash-can"></i> 清空</button>
@@ -473,10 +460,10 @@
             var btn = document.getElementById('clickDrawBtn');
             if (isClickDrawEnabled) {
                 btn.style.backgroundColor = '#17a2b8';
-                btn.innerHTML = '<i class="fa-solid fa-hand-pointer"></i> 手点画圆: [开]';
+                btn.innerHTML = '<i class="fa-solid fa-hand-pointer"></i> 手点:[开]';
             } else {
                 btn.style.backgroundColor = '#6c757d';
-                btn.innerHTML = '<i class="fa-solid fa-hand-pointer"></i> 手点画圆: [关]';
+                btn.innerHTML = '<i class="fa-solid fa-hand-pointer"></i> 手点:[关]';
             }
         }
         map.on('click', function(e) {
@@ -509,7 +496,7 @@
             if ("geolocation" in navigator) {
                 const btn = document.getElementById('locateBtn');
                 const originalHTML = btn.innerHTML;
-                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 定位中...';
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 定位...';
                 navigator.geolocation.getCurrentPosition(function(position) {
                     btn.innerHTML = originalHTML;
                     var wgsLng = position.coords.longitude;
@@ -529,7 +516,8 @@
                     tempLocateWgsLng = wgsLng;
                     tempLocateWgsLat = wgsLat;
                     
-                    btn.style.display = 'none';
+                    // 隐藏普通按钮，显示确认框
+                    document.getElementById('locateBtn').parentElement.style.display = 'none';
                     document.getElementById('locationConfirmArea').style.display = 'flex';
                     if(!isPanelOpen) togglePanel();
                     
@@ -543,7 +531,7 @@
         function cancelLocation() { resetLocateUI(); }
         function resetLocateUI() {
             if(tempLocateMarker) { map.removeLayer(tempLocateMarker); tempLocateMarker = null; }
-            document.getElementById('locateBtn').style.display = 'block';
+            document.getElementById('locateBtn').parentElement.style.display = 'flex';
             document.getElementById('locationConfirmArea').style.display = 'none';
         }
         function clearAll() {
