@@ -6,110 +6,290 @@
     <title>三圆定位 - 高德地图版</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; padding: 0; font-family: "Microsoft YaHei", sans-serif; }
+        body { margin: 0; padding: 0; font-family: "Microsoft YaHei", sans-serif; overflow: hidden; }
         #map { height: 100vh; width: 100%; z-index: 1; }
         
         /* 控制面板 */
         #controls {
-            position: absolute; top: 10px; left: 10px; right: 10px;
+            position: absolute; top: 10px; left: 10px; width: 320px; max-width: calc(100vw - 20px);
             background: rgba(255, 255, 255, 0.95);
-            padding: 15px; border-radius: 8px;
+            border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 1000; display: flex; flex-direction: column; gap: 10px;
+            z-index: 1000; display: flex; flex-direction: column;
+            transition: all 0.3s ease;
         }
         
-        .row { display: flex; align-items: center; gap: 10px; }
+        /* 控制面板头部（用于拖拽和折叠） */
+        .controls-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 10px 15px; background: #007bff; color: white;
+            border-radius: 8px 8px 0 0; cursor: pointer;
+            font-weight: bold; font-size: 15px;
+        }
+        .controls-header.collapsed { border-radius: 8px; }
+
+        /* 控制面板内容区 */
+        .controls-content {
+            padding: 15px; display: flex; flex-direction: column; gap: 12px;
+        }
+
+        .row { display: flex; align-items: center; gap: 8px; }
         label { font-size: 14px; font-weight: bold; color: #333; white-space: nowrap;}
-        input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 100%; box-sizing: border-box; }
         
         button {
-            padding: 10px; border: none; border-radius: 4px; 
-            font-size: 15px; font-weight: bold; color: white; cursor: pointer;
+            padding: 9px; border: none; border-radius: 4px; 
+            font-size: 14px; font-weight: bold; color: white; cursor: pointer;
+            transition: opacity 0.2s; white-space: nowrap;
         }
+        button:hover { opacity: 0.8; }
+        button:active { transform: scale(0.98); }
+        
+        .btn-primary { background: #007bff; }
+        .btn-success { background: #28a745; width: 100%; }
         .btn-clear { background: #dc3545; width: 100%; }
         
         .tip { 
             font-size: 12px; color: #666; background: #e9ecef; 
-            padding: 8px; border-radius: 4px; line-height: 1.4;
+            padding: 8px; border-radius: 4px; line-height: 1.5;
         }
     </style>
 </head>
 <body>
 
     <div id="controls">
-        <div class="row">
-            <label>半径 (米):</label>
-            <input type="number" id="radius" value="3000" placeholder="例如 1000">
+        <div class="controls-header" onclick="togglePanel()" id="panelHeader">
+            <span>⚙️ 控制面板</span>
+            <span id="toggleIcon">▼</span>
         </div>
-        
-        <div class="tip">
-            👆 <strong>操作指南：</strong><br>
-            1. 输入半径。<br>
-            2. <strong>直接点击地图</strong>上的位置即可画圈。<br>
-            3. 右下角可以切换“标准地图”或“卫星地图”。
-        </div>
+        <div class="controls-content" id="panelContent">
+            
+            <!-- 搜索模块 -->
+            <div class="row">
+                <input type="text" id="searchInput" placeholder="搜索省市区或地名...">
+                <button class="btn-primary" onclick="searchLocation()">搜索</button>
+            </div>
 
-        <button class="btn-clear" onclick="window.location.reload()">🗑️ 清空所有圆圈</button>
+            <!-- 半径设置 -->
+            <div class="row">
+                <label>半径 (KM):</label>
+                <input type="number" id="radius" value="3" step="0.1" placeholder="例如 1.5">
+            </div>
+            
+            <!-- 定位按钮 -->
+            <button class="btn-success" onclick="locateMe()">📍 定位我并画圆</button>
+
+            <div class="tip">
+                👆 <strong>操作指南：</strong><br>
+                1. 输入想要画的半径（千米）。<br>
+                2. <strong>直接点击地图</strong>或<strong>搜索位置</strong>进行画圈。<br>
+                3. 右下角可切换卫星地图。
+            </div>
+
+            <button class="btn-clear" onclick="clearAll()">🗑️ 清空所有圆圈</button>
+        </div>
     </div>
 
     <div id="map"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
+        // --- 坐标转换算法 (WGS84 -> GCJ02) 解决国内地图偏移 ---
+        const PI = 3.1415926535897932384626;
+        const a = 6378245.0;
+        const ee = 0.00669342162296594323;
+
+        function transformLat(x, y) {
+            let ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+            ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+            ret += (20.0 * Math.sin(y * PI) + 40.0 * Math.sin(y / 3.0 * PI)) * 2.0 / 3.0;
+            ret += (160.0 * Math.sin(y / 12.0 * PI) + 320 * Math.sin(y * PI / 30.0)) * 2.0 / 3.0;
+            return ret;
+        }
+
+        function transformLng(x, y) {
+            let ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+            ret += (20.0 * Math.sin(6.0 * x * PI) + 20.0 * Math.sin(2.0 * x * PI)) * 2.0 / 3.0;
+            ret += (20.0 * Math.sin(x * PI) + 40.0 * Math.sin(x / 3.0 * PI)) * 2.0 / 3.0;
+            ret += (150.0 * Math.sin(x / 12.0 * PI) + 300.0 * Math.sin(x / 30.0 * PI)) * 2.0 / 3.0;
+            return ret;
+        }
+
+        function wgs84togcj02(lng, lat) {
+            if (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271) {
+                return [lng, lat]; // 不在国内，不进行转换
+            }
+            let dlat = transformLat(lng - 105.0, lat - 35.0);
+            let dlng = transformLng(lng - 105.0, lat - 35.0);
+            let radlat = lat / 180.0 * PI;
+            let magic = Math.sin(radlat);
+            magic = 1 - ee * magic * magic;
+            let sqrtmagic = Math.sqrt(magic);
+            dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrtmagic) * PI);
+            dlng = (dlng * 180.0) / (a / sqrtmagic * Math.cos(radlat) * PI);
+            return [lng + dlng, lat + dlat];
+        }
+
+
         // 1. 初始化地图
         var map = L.map('map', {
             center: [39.9042, 116.4074], // 默认北京
             zoom: 11,
-            zoomControl: false // 隐藏默认缩放，手机用手捏
+            zoomControl: false // 手机端推荐隐藏默认缩放控件
         });
 
-        // 2. 定义高德地图图层 (XYZ 方式加载)
-        
-        // 高德 - 标准矢量图
+        // 用于保存所有画出来的圈和标记，方便一键清空
+        var drawnItems = L.featureGroup().addTo(map);
+
+        // 2. 加载高德图层
         var gaodeVec = L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
-            maxZoom: 18,
-            attribution: '高德地图'
+            maxZoom: 18, attribution: '高德地图'
         });
-
-        // 高德 - 卫星影像图
         var gaodeSat = L.tileLayer('https://webst01.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}', {
-            maxZoom: 18,
-            attribution: '高德卫星'
+            maxZoom: 18, attribution: '高德卫星'
         });
-
-        // 默认显示标准图
         gaodeVec.addTo(map);
 
-        // 添加图层切换控件 (右下角)
         var baseMaps = {
             "高德标准图": gaodeVec,
             "高德卫星图": gaodeSat
         };
         L.control.layers(baseMaps, null, {position: 'bottomright'}).addTo(map);
 
-        // 3. 点击画圆逻辑
-        map.on('click', function(e) {
-            var r = document.getElementById('radius').value;
-            if(!r || r <= 0) {
-                r = 3000; // 默认3公里
+
+        // --- 核心画圆逻辑 ---
+        function drawCircleAt(latlng) {
+            var r = parseFloat(document.getElementById('radius').value);
+            if(isNaN(r) || r <= 0) {
+                r = 3; // 默认3公里
+                document.getElementById('radius').value = 3;
             }
+            
+            var radiusInMeters = r * 1000; // 千米转米
 
             // 添加中心点
-            L.circleMarker(e.latlng, {
-                radius: 4,
-                color: '#000',
-                fillColor: '#fff',
-                fillOpacity: 1
-            }).addTo(map);
+            L.circleMarker(latlng, {
+                radius: 4, color: '#000', fillColor: '#fff', fillOpacity: 1
+            }).addTo(drawnItems);
 
-            // 添加半透明红圈
-            L.circle(e.latlng, {
-                color: 'red',        // 边框红
-                fillColor: '#f03',   // 填充深红
-                fillOpacity: 0.25,   // 透明度 (0.25 叠加效果最好)
-                radius: parseFloat(r)
-            }).addTo(map);
+            // 添加红色范围圈
+            L.circle(latlng, {
+                color: 'red',
+                fillColor: '#f03',
+                fillOpacity: 0.25,
+                radius: radiusInMeters
+            }).addTo(drawnItems);
+        }
+
+        // 3. 鼠标/手指点击地图画圆
+        map.on('click', function(e) {
+            drawCircleAt(e.latlng);
         });
+
+
+        // --- 面板最小化功能 ---
+        var isPanelOpen = true;
+        function togglePanel() {
+            var content = document.getElementById('panelContent');
+            var header = document.getElementById('panelHeader');
+            var icon = document.getElementById('toggleIcon');
+            
+            isPanelOpen = !isPanelOpen;
+            if (isPanelOpen) {
+                content.style.display = 'flex';
+                icon.innerText = '▼';
+                header.classList.remove('collapsed');
+            } else {
+                content.style.display = 'none';
+                icon.innerText = '◀';
+                header.classList.add('collapsed');
+            }
+        }
+
+
+        // --- 定位功能 ---
+        function locateMe() {
+            if ("geolocation" in navigator) {
+                // 修改按钮状态提示用户
+                const btn = document.querySelector('.btn-success');
+                const originalText = btn.innerText;
+                btn.innerText = "📍 正在定位...";
+                
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    btn.innerText = originalText;
+                    var wgsLng = position.coords.longitude;
+                    var wgsLat = position.coords.latitude;
+                    
+                    // WGS84 转换为 高德GCJ02 坐标系
+                    var gcjCoords = wgs84togcj02(wgsLng, wgsLat);
+                    var latlng = L.latLng(gcjCoords[1], gcjCoords[0]);
+                    
+                    map.setView(latlng, 13);
+                    drawCircleAt(latlng);
+                }, function(error) {
+                    btn.innerText = originalText;
+                    alert("定位失败，请确保已授予浏览器位置权限。");
+                }, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                });
+            } else {
+                alert("您的浏览器不支持地理定位功能。");
+            }
+        }
+
+
+        // --- 搜索功能 ---
+        function searchLocation() {
+            var kw = document.getElementById('searchInput').value.trim();
+            if(!kw) {
+                alert("请输入搜索内容");
+                return;
+            }
+            
+            // 使用免费的 OpenStreetMap Nominatim 搜索 API
+            var url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(kw)}&limit=1`;
+            
+            const btn = document.querySelector('.btn-primary');
+            const originalText = btn.innerText;
+            btn.innerText = "搜索中...";
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    btn.innerText = originalText;
+                    if(data && data.length > 0) {
+                        var wgsLat = parseFloat(data[0].lat);
+                        var wgsLng = parseFloat(data[0].lon);
+                        
+                        // 转换坐标系
+                        var gcjCoords = wgs84togcj02(wgsLng, wgsLat);
+                        var latlng = L.latLng(gcjCoords[1], gcjCoords[0]);
+                        
+                        map.setView(latlng, 13);
+                        drawCircleAt(latlng);
+                        
+                        // 手机端搜索完毕后自动折叠面板，方便看地图
+                        if(window.innerWidth < 600 && isPanelOpen) {
+                            togglePanel();
+                        }
+                    } else {
+                        alert("未找到该地点，请尝试输入更详细的地址。");
+                    }
+                })
+                .catch(err => {
+                    btn.innerText = originalText;
+                    alert("搜索请求出错，请检查网络。");
+                });
+        }
+
+
+        // --- 清空功能 ---
+        function clearAll() {
+            drawnItems.clearLayers();
+        }
+
     </script>
 </body>
 </html>
