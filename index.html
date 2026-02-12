@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>三圆定位 - 高德地图版</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <style>
         body { margin: 0; padding: 0; font-family: "Microsoft YaHei", sans-serif; overflow: hidden; }
         * { box-sizing: border-box; } /* 确保所有的宽高计算都包含内边距，防止撑破 */
@@ -104,21 +105,26 @@
             transform: scale(0.85); /* 手机端连同地图控件一起缩小 */
             transform-origin: top right;
         }
+        
+        /* 针对图标稍微增加一点间距 */
+        i.fa-solid { margin-right: 4px; }
+        .icon-btn i.fa-solid { margin-right: 0; }
+        #toggleIcon i.fa-solid { margin-right: 0; }
     </style>
 </head>
 <body>
 
     <div id="controls">
         <div class="controls-header" onclick="togglePanel()" id="panelHeader">
-            <span>⚙️ 控制面板</span>
-            <span id="toggleIcon">▼</span>
+            <span><i class="fa-solid fa-gear"></i> 控制面板</span>
+            <span id="toggleIcon"><i class="fa-solid fa-chevron-down"></i></span>
         </div>
         <div class="controls-content" id="panelContent">
             
             <!-- 搜索模块 -->
             <div class="row">
                 <input type="text" id="searchInput" placeholder="搜地点...">
-                <button class="btn-primary" onclick="searchLocation()" style="width: 50px; flex-shrink: 0;">搜索</button>
+                <button class="btn-primary" onclick="searchLocation()" style="width: 50px; flex-shrink: 0;" title="搜索"><i class="fa-solid fa-magnifying-glass"></i></button>
             </div>
 
             <!-- 半径设置 -->
@@ -128,23 +134,23 @@
             </div>
             
             <!-- 定位按钮 -->
-            <button id="locateBtn" class="btn-success" onclick="locateMe()">📍 定位我</button>
+            <button id="locateBtn" class="btn-success" onclick="locateMe()"><i class="fa-solid fa-location-crosshairs"></i> 定位我</button>
 
             <!-- 定位确认区域 (默认隐藏) -->
             <div id="locationConfirmArea" style="display: none; flex-direction: column; gap: 5px; background: #e2e3e5; padding: 6px; border-radius: 4px;">
                 <div style="font-size: 11px; color: #383d41; text-align: center; font-weight: bold;">在此处画圆？</div>
                 <div style="display: flex; gap: 5px;">
-                    <button class="btn-success" onclick="confirmLocation()" style="flex: 1;">✔️ 确定</button>
-                    <button class="btn-clear" onclick="cancelLocation()" style="flex: 1; background: #6c757d;">❌ 取消</button>
+                    <button class="btn-success" onclick="confirmLocation()" style="flex: 1;"><i class="fa-solid fa-check"></i> 确定</button>
+                    <button class="btn-clear" onclick="cancelLocation()" style="flex: 1; background: #6c757d;"><i class="fa-solid fa-xmark"></i> 取消</button>
                 </div>
             </div>
 
             <!-- 点击画圆开关 -->
-            <button id="clickDrawBtn" class="btn-primary" onclick="toggleClickDraw()" style="background-color: #17a2b8;">👆 手点地图画圆: [开]</button>
+            <button id="clickDrawBtn" class="btn-primary" onclick="toggleClickDraw()" style="background-color: #17a2b8;"><i class="fa-solid fa-hand-pointer"></i> 手点地图画圆: [开]</button>
 
             <!-- PS风格图层面板 -->
             <div class="layer-panel">
-                <div class="layer-header">📚 图层面板</div>
+                <div class="layer-header"><i class="fa-solid fa-layer-group"></i> 图层面板</div>
                 <ul id="layerList" class="layer-list">
                     <!-- 动态生成图层 -->
                     <li style="padding: 10px; font-size: 11px; color: #999; text-align: center;">暂无图层</li>
@@ -157,7 +163,7 @@
                 3. 右侧可切换卫星图
             </div>
 
-            <button class="btn-clear" onclick="clearAll()">🗑️ 清空所有</button>
+            <button class="btn-clear" onclick="clearAll()"><i class="fa-solid fa-trash-can"></i> 清空所有</button>
         </div>
     </div>
 
@@ -260,8 +266,8 @@
             maxZoom: 18, attribution: '高德卫星'
         });
         
-        // 谷歌卫星混合图层 (lyrs=y 表示卫星图+地名/道路标签)
-        var googleSat = L.tileLayer('https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        // 【修改此处】谷歌纯卫星图 (lyrs=s 表示纯卫星图片，去除了强制偏移的错位路网)
+        var googleSat = L.tileLayer('https://mt{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
             maxZoom: 18,
             subdomains: ['0', '1', '2', '3'],
             attribution: '© Google Maps'
@@ -272,14 +278,15 @@
         var baseMaps = {
             "高德标准图": gaodeVec,
             "高德卫星图": gaodeSat,
-            "谷歌卫星图": googleSat
+            "谷歌纯卫星图": googleSat
         };
         
         L.control.layers(baseMaps, null, {position: 'topright'}).addTo(map);
 
         // --- 核心优化：监听图层切换，动态修正坐标偏移 ---
         map.on('baselayerchange', function (e) {
-            var newCoordSystem = (e.name === '谷歌卫星图') ? 'WGS84' : 'GCJ02';
+            // 【修改此处】匹配新的图层名字
+            var newCoordSystem = (e.name === '谷歌纯卫星图') ? 'WGS84' : 'GCJ02';
             
             if (newCoordSystem !== currentCoordSystem) {
                 // 1. 修正地图中心点视角，让画面保持在同一建筑物上
@@ -357,13 +364,13 @@
                 
                 var eyeBtn = document.createElement('button');
                 eyeBtn.className = 'icon-btn';
-                eyeBtn.innerHTML = data.visible ? '👁️' : '🙈';
+                eyeBtn.innerHTML = data.visible ? '<i class="fa-solid fa-eye"></i>' : '<i class="fa-solid fa-eye-slash"></i>';
                 eyeBtn.title = "显示/隐藏图层";
                 eyeBtn.onclick = function() { toggleLayerVisibility(id); };
                 
                 var delBtn = document.createElement('button');
                 delBtn.className = 'icon-btn';
-                delBtn.innerHTML = '🗑️';
+                delBtn.innerHTML = '<i class="fa-solid fa-trash-can"></i>';
                 delBtn.title = "删除此图层";
                 delBtn.onclick = function() { deleteLayer(id); };
                 
@@ -448,10 +455,10 @@
             var btn = document.getElementById('clickDrawBtn');
             if (isClickDrawEnabled) {
                 btn.style.backgroundColor = '#17a2b8';
-                btn.innerText = '👆 手点地图画圆: [开]';
+                btn.innerHTML = '<i class="fa-solid fa-hand-pointer"></i> 手点地图画圆: [开]';
             } else {
                 btn.style.backgroundColor = '#6c757d';
-                btn.innerText = '👆 手点地图画圆: [关]';
+                btn.innerHTML = '<i class="fa-solid fa-hand-pointer"></i> 手点地图画圆: [关]';
             }
         }
 
@@ -482,11 +489,11 @@
             isPanelOpen = !isPanelOpen;
             if (isPanelOpen) {
                 content.style.display = 'flex';
-                icon.innerText = '▼';
+                icon.innerHTML = '<i class="fa-solid fa-chevron-down"></i>';
                 header.classList.remove('collapsed');
             } else {
                 content.style.display = 'none';
-                icon.innerText = '◀';
+                icon.innerHTML = '<i class="fa-solid fa-chevron-left"></i>';
                 header.classList.add('collapsed');
             }
         }
@@ -496,11 +503,11 @@
         function locateMe() {
             if ("geolocation" in navigator) {
                 const btn = document.getElementById('locateBtn');
-                const originalText = btn.innerText;
-                btn.innerText = "📍 正在定位...";
+                const originalHTML = btn.innerHTML;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 定位中...';
                 
                 navigator.geolocation.getCurrentPosition(function(position) {
-                    btn.innerText = originalText;
+                    btn.innerHTML = originalHTML;
                     var wgsLng = position.coords.longitude;
                     var wgsLat = position.coords.latitude;
                     
@@ -529,7 +536,7 @@
                         togglePanel();
                     }
                 }, function(error) {
-                    btn.innerText = originalText;
+                    btn.innerHTML = originalHTML;
                     alert("定位失败，请确保已授予浏览器位置权限。");
                 }, {
                     enableHighAccuracy: true,
@@ -578,13 +585,13 @@
             var url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(kw)}&limit=1`;
             
             const btn = document.querySelector('.btn-primary');
-            const originalText = btn.innerText;
-            btn.innerText = "中...";
+            const originalHTML = btn.innerHTML;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
             fetch(url)
                 .then(response => response.json())
                 .then(data => {
-                    btn.innerText = originalText;
+                    btn.innerHTML = originalHTML;
                     if(data && data.length > 0) {
                         var wgsLat = parseFloat(data[0].lat);
                         var wgsLng = parseFloat(data[0].lon);
@@ -609,7 +616,7 @@
                     }
                 })
                 .catch(err => {
-                    btn.innerText = originalText;
+                    btn.innerHTML = originalHTML;
                     alert("搜索请求出错，请检查网络。");
                 });
         }
