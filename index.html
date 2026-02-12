@@ -34,8 +34,8 @@
         }
 
         .row { display: flex; align-items: center; gap: 8px; }
-        label { font-size: 14px; font-weight: bold; color: #333; white-space: nowrap;}
-        input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 100%; box-sizing: border-box; }
+        #controls label { font-size: 14px; font-weight: bold; color: #333; white-space: nowrap;}
+        #controls input { flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 100%; box-sizing: border-box; }
         
         button {
             padding: 9px; border: none; border-radius: 4px; 
@@ -89,7 +89,16 @@
             </div>
             
             <!-- 定位按钮 -->
-            <button class="btn-success" onclick="locateMe()">📍 定位我并画圆</button>
+            <button id="locateBtn" class="btn-success" onclick="locateMe()">📍 定位我</button>
+
+            <!-- 定位确认区域 (默认隐藏) -->
+            <div id="locationConfirmArea" style="display: none; flex-direction: column; gap: 8px; background: #e2e3e5; padding: 10px; border-radius: 4px;">
+                <div style="font-size: 13px; color: #383d41; text-align: center; font-weight: bold;">已移动到当前位置，是否在此画圆？</div>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn-success" onclick="confirmLocation()" style="flex: 1;">✔️ 确定</button>
+                    <button class="btn-clear" onclick="cancelLocation()" style="flex: 1; background: #6c757d;">❌ 取消</button>
+                </div>
+            </div>
 
             <!-- 点击画圆开关 -->
             <button id="clickDrawBtn" class="btn-primary" onclick="toggleClickDraw()" style="background-color: #17a2b8;">👆 允许手点地图画圆: [开启]</button>
@@ -166,6 +175,8 @@
         var layersData = {};
         var layerCount = 0;
         var isClickDrawEnabled = true;
+        var tempLocateMarker = null; // 用于存储定位时的临时标记
+        var tempLocateLatLng = null; // 用于存储定位时的临时坐标
 
         // 2. 加载高德图层
         var gaodeVec = L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
@@ -339,7 +350,7 @@
         function locateMe() {
             if ("geolocation" in navigator) {
                 // 修改按钮状态提示用户
-                const btn = document.querySelector('.btn-success');
+                const btn = document.getElementById('locateBtn');
                 const originalText = btn.innerText;
                 btn.innerText = "📍 正在定位...";
                 
@@ -352,8 +363,23 @@
                     var gcjCoords = wgs84togcj02(wgsLng, wgsLat);
                     var latlng = L.latLng(gcjCoords[1], gcjCoords[0]);
                     
-                    map.setView(latlng, 13);
-                    drawCircleAt(latlng, "我的位置");
+                    // 1. 移动并放大到最大层级 (18级通常能清晰看到街道)
+                    map.setView(latlng, 18);
+                    
+                    // 2. 添加一个临时标记点，指示定位位置
+                    if(tempLocateMarker) { map.removeLayer(tempLocateMarker); }
+                    tempLocateMarker = L.marker(latlng).addTo(map);
+                    tempLocateLatLng = latlng;
+
+                    // 3. 切换面板按钮显示，等待用户确认
+                    btn.style.display = 'none';
+                    document.getElementById('locationConfirmArea').style.display = 'flex';
+                    
+                    // 如果面板是折叠的，自动展开以便用户操作
+                    if(!isPanelOpen) {
+                        togglePanel();
+                    }
+
                 }, function(error) {
                     btn.innerText = originalText;
                     alert("定位失败，请确保已授予浏览器位置权限。");
@@ -365,6 +391,32 @@
             } else {
                 alert("您的浏览器不支持地理定位功能。");
             }
+        }
+
+        // --- 确认定位并画圆 ---
+        function confirmLocation() {
+            if(tempLocateLatLng) {
+                drawCircleAt(tempLocateLatLng, "我的位置");
+            }
+            resetLocateUI();
+            // 画圆后缩小视角，方便看全貌 (可选，这里设定回缩到13级)
+            map.setZoom(13); 
+        }
+
+        // --- 取消定位画圆 ---
+        function cancelLocation() {
+            resetLocateUI();
+        }
+
+        // --- 恢复定位UI状态 ---
+        function resetLocateUI() {
+            if(tempLocateMarker) {
+                map.removeLayer(tempLocateMarker);
+                tempLocateMarker = null;
+            }
+            tempLocateLatLng = null;
+            document.getElementById('locateBtn').style.display = 'block';
+            document.getElementById('locationConfirmArea').style.display = 'none';
         }
 
 
@@ -384,8 +436,8 @@
             btn.innerText = "搜索中...";
 
             fetch(url)
-                .键，然后(response => response.json())
-                .键，然后(data => {
+                .then(response => response.json())
+                .then(data => {
                     btn.innerText = originalText;
                     if(data && data.length > 0) {
                         var wgsLat = parseFloat(data[0].lat);
