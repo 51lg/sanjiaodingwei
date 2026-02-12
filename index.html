@@ -65,6 +65,23 @@
         .layer-actions { display: flex; gap: 8px; }
         .icon-btn { cursor: pointer; border: none; background: none; font-size: 14px; padding: 0; opacity: 0.7; transition: opacity 0.2s; }
         .icon-btn:hover { opacity: 1; }
+
+        /* 针对手机端的 UI 优化 */
+        @media (max-width: 600px) {
+            .controls-content { padding: 10px; gap: 8px; }
+            .controls-header { padding: 8px 12px; font-size: 14px; }
+            button { padding: 7px; font-size: 13px; }
+            #controls input { padding: 6px; font-size: 13px; }
+            #controls label { font-size: 13px; }
+            .layer-list { max-height: 90px; }
+            .tip { font-size: 11px; padding: 6px; }
+        }
+
+        /* 调整地图自带控件的位置（如图层切换），在右上角并往下移 */
+        .leaflet-top.leaflet-right {
+            margin-top: 60px; /* 往下移，避开顶部的折叠栏 */
+            z-index: 999;     /* 确保层级在我们的主控制面板之下 */
+        }
     </style>
 </head>
 <body>
@@ -200,7 +217,9 @@
             "高德卫星图": gaodeSat,
             "谷歌卫星图": googleSat
         };
-        L.control.layers(baseMaps, null, {position: 'bottomright'}).addTo(map);
+        
+        // 【修改此处】将图层控件从 bottomright 移动到右上角 (topright)
+        L.control.layers(baseMaps, null, {position: 'topright'}).addTo(map);
 
 
         // --- 图层面板 UI 更新逻辑 ---
